@@ -331,6 +331,148 @@ fn plan_accept_requires_implemented_state() {
 }
 
 #[test]
+fn plan_lifecycle_start_implemented_accept_releases_successor() {
+    // Independent-review addition (reviewer-owned; tests/cli.rs is Plan 03's
+    // exclusive path). The implementation's own suite covered only the
+    // *negative* plan-lifecycle CLI paths (refused start/accept). This test
+    // exercises the full *positive* path end to end through the real CLI
+    // dispatcher: start -> implemented -> accept, asserting that acceptance
+    // releases a BLOCKED successor to READY only once its complete
+    // hard-predecessor set is satisfied. Operates entirely on a TEMP COPY of
+    // the real graph with two synthetic nodes; the live repository graph is
+    // byte-snapshotted before and after and asserted unchanged, and the
+    // injected node ids are asserted never to leak into it.
+    let live_path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/plan/execution-graph.toml");
+    let live_before = std::fs::read_to_string(&live_path).unwrap();
+    let tmp = temp_copy_of_real_graph();
+    let toml_path = tmp.path().join("docs/plan/execution-graph.toml");
+
+    // Inject a READY node whose sole hard predecessor ("02-1") is already
+    // ACCEPTED in the real graph, and a BLOCKED successor gated on it.
+    let mut ws =
+        toml::from_str::<PlanWorkspace>(&std::fs::read_to_string(&toml_path).unwrap()).unwrap();
+    use mine::domain::graph::PlanNode;
+    use mine::domain::status::PlanStatus;
+    let blank_node = |id: &str, status: PlanStatus, hard: Vec<&str>| PlanNode {
+        id: id.to_string(),
+        path: format!("docs/plan/{id}-test.md"),
+        title: format!("{id}-test"),
+        status,
+        hard_predecessors: hard.into_iter().map(str::to_string).collect(),
+        soft_predecessors: vec![],
+        design_references: vec!["docs/design/principles.md".to_string()],
+        exclusive_write_paths: vec![format!("tests/noop-{id}/")],
+        read_only_paths: vec![],
+        reserved_shared_paths: vec![],
+        implementation_report: String::new(),
+        review_report: String::new(),
+        implementation_commits: vec![],
+        owner: String::new(),
+        run_id: String::new(),
+        started_at: String::new(),
+        updated_at: String::new(),
+        rejection_reason: String::new(),
+        compensating_plan: String::new(),
+    };
+    ws.plans
+        .push(blank_node("99-lifecycle", PlanStatus::Ready, vec!["02-1"]));
+    ws.plans.push(blank_node(
+        "99-successor",
+        PlanStatus::Blocked,
+        vec!["99-lifecycle"],
+    ));
+    std::fs::write(&toml_path, toml::to_string(&ws).unwrap()).unwrap();
+
+    // 1) start: READY -> IN_PROGRESS.
+    let outcome = cli::dispatch(
+        &run(
+            tmp.path().to_str().unwrap(),
+            &["plan", "start", "--id", "99-lifecycle", "--format", "json"],
+        ),
+        "mine",
+    );
+    assert_eq!(outcome.exit_code, 0, "start must succeed: {outcome:?}");
+    let after_start =
+        toml::from_str::<PlanWorkspace>(&std::fs::read_to_string(&toml_path).unwrap()).unwrap();
+    assert_eq!(
+        after_start.get("99-lifecycle").unwrap().status,
+        PlanStatus::InProgress
+    );
+
+    // 2) implemented: IN_PROGRESS -> IMPLEMENTED.
+    let outcome = cli::dispatch(
+        &run(
+            tmp.path().to_str().unwrap(),
+            &[
+                "plan",
+                "implemented",
+                "--id",
+                "99-lifecycle",
+                "--report",
+                "docs/plan/reports/99-lifecycle-implementation.md",
+                "--commit",
+                "deadbeefcafebabe0000000000000000000000",
+                "--format",
+                "json",
+            ],
+        ),
+        "mine",
+    );
+    assert_eq!(
+        outcome.exit_code, 0,
+        "implemented must succeed: {outcome:?}"
+    );
+    let after_impl =
+        toml::from_str::<PlanWorkspace>(&std::fs::read_to_string(&toml_path).unwrap()).unwrap();
+    assert_eq!(
+        after_impl.get("99-lifecycle").unwrap().status,
+        PlanStatus::Implemented
+    );
+
+    // 3) accept: IMPLEMENTED -> ACCEPTED, releasing the BLOCKED successor to
+    //    READY (its sole hard predecessor is now accepted).
+    let outcome = cli::dispatch(
+        &run(
+            tmp.path().to_str().unwrap(),
+            &[
+                "plan",
+                "accept",
+                "--id",
+                "99-lifecycle",
+                "--review",
+                "docs/plan/reports/99-lifecycle-review.md",
+                "--format",
+                "json",
+            ],
+        ),
+        "mine",
+    );
+    assert_eq!(outcome.exit_code, 0, "accept must succeed: {outcome:?}");
+    let env = envelope_json(&outcome);
+    assert_eq!(env["ok"], true);
+    let after_accept =
+        toml::from_str::<PlanWorkspace>(&std::fs::read_to_string(&toml_path).unwrap()).unwrap();
+    assert_eq!(
+        after_accept.get("99-lifecycle").unwrap().status,
+        PlanStatus::Accepted,
+        "target reaches ACCEPTED"
+    );
+    assert_eq!(
+        after_accept.get("99-successor").unwrap().status,
+        PlanStatus::Ready,
+        "successor released to READY once its full hard-predecessor set is ACCEPTED"
+    );
+
+    // Live graph fully untouched (byte snapshot before/after); the injected
+    // synthetic ids never leak into it.
+    let live_after = std::fs::read_to_string(&live_path).unwrap();
+    assert_eq!(live_before, live_after, "live graph byte-unchanged");
+    assert!(!live_after.contains("99-lifecycle"));
+    assert!(!live_after.contains("99-successor"));
+}
+
+#[test]
 fn workspace_open_on_real_graph_is_idempotent() {
     let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let store = TomlStore::new(&repo_root);
