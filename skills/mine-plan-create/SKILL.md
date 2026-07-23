@@ -13,7 +13,7 @@ A completed plan is an executable engineering contract, not a brainstorm, backlo
 
 Use these exact repository paths unless an existing repository convention is stricter:
 
-- Architecture source of truth: `docs/design/architecture-and-detailed-design.md`
+- Design knowledge base root: `docs/design/index.md` (progressive disclosure; MINE owns `docs/design/`)
 - Execution plans: `docs/plan/`
 - Execution graph machine source: `docs/plan/execution-graph.toml`
 - Generated graph view: `docs/plan/execution-graph.md`
@@ -37,7 +37,7 @@ Do not reference a bundled or repository file unless it actually exists. Links i
 5. Record verified links and the exact claim each source supports inside the plan.
 6. Never finalize an implementation-ready plan when required web search or page fetching is unavailable. Report the missing research capability and leave the plan explicitly `DRAFT` or do not create it.
 7. Follow the architecture and SOLID. Do not use a plan to silently redesign the system.
-8. If the target work requires an architecture change, update `docs/design/architecture-and-detailed-design.md` first, then make the plan depend on the updated sections.
+8. If the target work requires an architecture change, update the `docs/design/` knowledge base first (the affected leaf/index), then make the plan cite the updated design paths and anchors.
 9. Do not preserve obsolete implementations merely because an earlier plan created them. Unless the user explicitly requires compatibility, change the target implementation directly and schedule cleanup of superseded fields, interfaces, parameters, adapters, migrations, aliases, and shims.
 10. Preserve unrelated user changes and never invent evidence, commands, files, APIs, tool names, test results, or external behavior.
 
@@ -77,7 +77,7 @@ Read in this order:
 
 1. User requirements and supplied artifacts.
 2. Root `AGENTS.md`.
-3. `docs/design/architecture-and-detailed-design.md` in full for relevant sections, plus surrounding sections needed to understand boundaries and invariants.
+3. `docs/design/index.md` and the relevant domain/component indexes and leaves in full, plus surrounding sections needed to understand boundaries and invariants.
 4. Query the execution graph through the final `mine` MCP tools or `mine --format json`; use the generated Markdown only as a readable view.
 5. Relevant existing plans and implementation/review reports.
 6. Repository manifests, lockfiles, toolchain files, CI, deployment files, generated-schema ownership, and Git status/history relevant to the work.
@@ -168,7 +168,7 @@ Also verify:
 - no speculative abstraction or interface with only imagined consumers;
 - no obsolete compatibility layer unless explicitly required.
 
-If the accepted architecture cannot support the request cleanly, update the architecture first. Include exact architecture section links in the plan.
+If the accepted design knowledge base cannot support the request cleanly, update the relevant `docs/design/` leaf/index first. Include exact design paths (and anchors where applicable) in the plan.
 
 ## Phase 7: Design for parallel execution
 
@@ -249,20 +249,18 @@ Never label an unrun command, timeout, unavailable dependency, ignored diagnosti
 
 Do not edit `docs/plan/execution-graph.toml` or `docs/plan/execution-graph.md` directly. After the plan document is complete:
 
-1. Read the current graph revision using `mine_graph_status` or `mine graph status --format json`.
-2. Register the plan using `mine_plan_add` or the final `mine plan add --format json` command.
-3. Supply exact hard/soft predecessors, exclusive write paths, read-only paths, and reserved shared paths from the plan.
-4. Carry `expected_revision` on every write.
-5. Run `mine_graph_validate` or `mine graph validate --format json`.
-6. Report the returned plan status, revision, READY frontier, and parallel wave.
+1. Read the current graph revision using `mine graph status --format json` (the envelope's `data.revision` is the current revision; carry it as `expected_revision` on the write).
+2. Register the plan using `mine plan add --format json` with: `--id`, `--path`, `--title`, at least one `--design-ref`, and any `--write` (exclusive write paths) and `--hard` (hard predecessors) as needed. Repeat `--design-ref`/`--write`/`--hard` for multiple values.
+3. Run `mine graph validate --format json` after registration.
+4. Report the returned revision before/after and the new plan's status (`DRAFT` or the released status).
 
-MCP is preferred. JSON CLI is the fallback. Never parse human output. If the installed command/tool contract differs from this draft, use the final implemented contract and update this Skill before release.
+The accepted MINE CLI reads the current revision itself before mutating under the lock, so an explicit `expected_revision` argument is **not** required; the CLI emits `revision_before`/`revision_after` in every mutation envelope. If a typed MCP bridge is later accepted, prefer it and fall back to `--format json` CLI. Never parse human output. Never edit the graph files directly. If the installed command contract differs from this draft, use the actual implemented contract and update this Skill before release.
 
 ## Final review gates
 
 Before finishing, verify all of the following:
 
-- The architecture file exists at the fixed path and every cited section is real.
+- The cited `docs/design/` leaves/anchors exist and every cited section is real.
 - Architecture changes were made before the dependent plan.
 - Mandatory web research was completed using opened authoritative pages.
 - Every external link is real, current enough for the decision, and tied to a claim.
