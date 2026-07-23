@@ -50,6 +50,60 @@ pub enum MineError {
     #[error("configuration is invalid at {path}: {detail}")]
     ConfigInvalid { path: PathBuf, detail: String },
 
+    /// The execution graph is not initialized at the expected path.
+    #[error("execution graph not initialized at {path}")]
+    GraphNotInitialized { path: PathBuf },
+
+    /// The execution graph failed structural validation.
+    #[error("execution graph is invalid: {detail}")]
+    GraphInvalid { detail: String },
+
+    /// The execution graph contains a cycle in hard dependencies.
+    #[error("execution graph contains a cycle: {cycle}")]
+    GraphCycle { cycle: String },
+
+    /// A referenced plan node was not found.
+    #[error("plan not found: {plan_id}")]
+    PlanNotFound { plan_id: String },
+
+    /// A requested state transition is not allowed by the state machine.
+    #[error("invalid transition for plan {plan_id}: {from} -> {to}")]
+    InvalidTransition {
+        plan_id: String,
+        from: String,
+        to: String,
+    },
+
+    /// A hard predecessor is not yet accepted.
+    #[error(
+        "plan {plan_id} predecessor {predecessor_id} is not accepted (status: {predecessor_status})"
+    )]
+    PredecessorNotAccepted {
+        plan_id: String,
+        predecessor_id: String,
+        predecessor_status: String,
+    },
+
+    /// Two plans have conflicting write scopes.
+    #[error("write scope conflict between plan {plan_a} and plan {plan_b}: {detail}")]
+    WriteScopeConflict {
+        plan_a: String,
+        plan_b: String,
+        detail: String,
+    },
+
+    /// The caller's `expected_revision` does not match the stored revision.
+    #[error("revision conflict: expected revision {expected}, actual revision {actual}")]
+    RevisionConflict { expected: u64, actual: u64 },
+
+    /// The exclusive graph lock could not be acquired within the timeout.
+    #[error("lock timeout acquiring {path}: {detail}")]
+    LockTimeout { path: PathBuf, detail: String },
+
+    /// Required implementation or review evidence is missing.
+    #[error("evidence missing for plan {plan_id}: {detail}")]
+    EvidenceMissing { plan_id: String, detail: String },
+
     /// A filesystem input/output error.
     #[error("input/output error: {0}")]
     Io(#[from] std::io::Error),
@@ -66,6 +120,16 @@ impl MineError {
             Self::DesignMarkerInvalid { .. } => "MINE_DESIGN_MARKER_INVALID",
             Self::RepositoryIdMismatch { .. } => "MINE_REPOSITORY_ID_MISMATCH",
             Self::ConfigInvalid { .. } => "MINE_CONFIG_INVALID",
+            Self::GraphNotInitialized { .. } => "MINE_GRAPH_NOT_INITIALIZED",
+            Self::GraphInvalid { .. } => "MINE_GRAPH_INVALID",
+            Self::GraphCycle { .. } => "MINE_GRAPH_CYCLE",
+            Self::PlanNotFound { .. } => "MINE_PLAN_NOT_FOUND",
+            Self::InvalidTransition { .. } => "MINE_INVALID_TRANSITION",
+            Self::PredecessorNotAccepted { .. } => "MINE_PREDECESSOR_NOT_ACCEPTED",
+            Self::WriteScopeConflict { .. } => "MINE_WRITE_SCOPE_CONFLICT",
+            Self::RevisionConflict { .. } => "MINE_REVISION_CONFLICT",
+            Self::LockTimeout { .. } => "MINE_LOCK_TIMEOUT",
+            Self::EvidenceMissing { .. } => "MINE_EVIDENCE_MISSING",
             Self::Io(_) => "MINE_IO",
         }
     }

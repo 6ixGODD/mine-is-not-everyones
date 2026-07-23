@@ -9,6 +9,10 @@
 //! dispatch is unavailable so that no unavailable command is ever pretended to
 //! have run.
 
+// Enforce `AGENTS.md`'s "Business code must not use `unsafe`" at compile time
+// for the `mine` binary crate as well as the library crate.
+#![forbid(unsafe_code)]
+
 fn main() -> std::process::ExitCode {
     eprintln!(
         "mine: command dispatch is not wired until Plan 03. Initialization logic is available as a library and verified via `cargo test`."
