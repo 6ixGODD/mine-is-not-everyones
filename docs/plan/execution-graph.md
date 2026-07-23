@@ -7,13 +7,13 @@
 - Workspace: `bootstrap-mine-v1`
 - Stable branch: `master`
 - Integration branch: `dev`
-- Revision: `3`
+- Revision: `4`
 
 | Plan | Title | Status | Hard predecessors |
 |---|---|---|---|
 | 01 | Repository foundation, initialization, namespace, and branch governance | ACCEPTED | — |
 | 02 | Execution graph domain and persistence | REJECTED | 01 |
-| 02-1 | Execution graph safe file locking (compensation for rejected Plan 02) | IN_PROGRESS | 01 |
+| 02-1 | Execution graph safe file locking (compensation for rejected Plan 02) | IMPLEMENTED | 01 |
 | 03 | CLI, JSON, rendering, Git evidence, and workspace lifecycle | BLOCKED | 02-1 |
 | 04 | Skills JSON-CLI, mine-sync, and design lifecycle | BLOCKED | 03 |
 | 05 | stdio MCP server and typed tools | BLOCKED | 03 |
