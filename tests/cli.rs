@@ -228,7 +228,11 @@ fn temp_copy_of_real_graph() -> tempfile::TempDir {
 fn plan_start_refuses_non_ready_plan() {
     // Plan 02-1 is ACCEPTED (terminal): `plan start` must be refused. Operate
     // on a TEMP COPY so the write path is never exercised against the live
-    // repository graph.
+    // repository graph. We snapshot the live graph bytes before/after and
+    // assert they are unchanged (independent of the current revision number).
+    let live_path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/plan/execution-graph.toml");
+    let live_before = std::fs::read_to_string(&live_path).unwrap();
     let tmp = temp_copy_of_real_graph();
     let outcome = cli::dispatch(
         &run(
@@ -244,12 +248,12 @@ fn plan_start_refuses_non_ready_plan() {
     let env = envelope_json(&outcome);
     assert_eq!(env["ok"], false);
     assert_eq!(env["error"]["code"], "MINE_INVALID_TRANSITION");
-    // Live graph unchanged.
-    let live = std::fs::read_to_string(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/plan/execution-graph.toml"),
-    )
-    .unwrap();
-    assert!(live.contains("revision = 7"));
+    // Live graph byte-unchanged.
+    let live_after = std::fs::read_to_string(&live_path).unwrap();
+    assert_eq!(
+        live_before, live_after,
+        "live graph unchanged by the temp-copy test"
+    );
 }
 
 #[test]
@@ -257,7 +261,12 @@ fn plan_accept_requires_implemented_state() {
     // `plan accept` must be refused for a plan that is NOT `IMPLEMENTED`. We
     // operate on a TEMP COPY of the real graph and inject an IN_PROGRESS
     // synthetic plan node so the accept write path is exercised against the
-    // copy only, never the live repository graph.
+    // copy only, never the live repository graph. Snapshot the live graph
+    // bytes before/after to assert the live graph is byte-unchanged
+    // (independent of the bootstrap revision number).
+    let live_path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/plan/execution-graph.toml");
+    let live_before = std::fs::read_to_string(&live_path).unwrap();
     let tmp = temp_copy_of_real_graph();
     let toml_path = tmp.path().join("docs/plan/execution-graph.toml");
     let mut ws = toml::from_str::<mine::domain::graph::PlanWorkspace>(
@@ -266,6 +275,7 @@ fn plan_accept_requires_implemented_state() {
     .unwrap();
     use mine::domain::graph::PlanNode;
     use mine::domain::status::PlanStatus;
+    let injected_revision = ws.revision;
     // Plan 02-1 is ACCEPTED; reuse it as a resolved hard predecessor. The
     // synthetic plan is IN_PROGRESS (not IMPLEMENTED); accepting it must fail.
     ws.plans.push(PlanNode {
@@ -303,21 +313,21 @@ fn plan_accept_requires_implemented_state() {
     assert_eq!(outcome.exit_code, 4);
     let env = envelope_json(&outcome);
     assert_eq!(env["error"]["code"], "MINE_INVALID_TRANSITION");
-    // Temp copy unchanged (rejected transition must not mutate): still the
-    // original revision; the injected plan is still present.
+    // Temp copy unchanged (rejected transition must not mutate): the injected
+    // 99-test plan is still present, and the revision string is unchanged
+    // (compare the bytes captured before dispatching).
     let after = std::fs::read_to_string(&toml_path).unwrap();
-    assert!(
-        after.contains("revision = 7"),
-        "temp graph unchanged by rejected accept"
+    let after_ws = toml::from_str::<mine::domain::graph::PlanWorkspace>(&after).unwrap();
+    assert_eq!(
+        after_ws.revision, injected_revision,
+        "temp graph revision unchanged by rejected accept"
     );
     assert!(after.contains("99-test"));
-    // Live graph fully untouched, and the injected test plan did not leak.
-    let live = std::fs::read_to_string(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/plan/execution-graph.toml"),
-    )
-    .unwrap();
-    assert!(live.contains("revision = 7"));
-    assert!(!live.contains("99-test"));
+    // Live graph fully untouched (byte snapshot before/after), and the injected
+    // test plan did not leak to it.
+    let live_after = std::fs::read_to_string(&live_path).unwrap();
+    assert_eq!(live_before, live_after, "live graph byte-unchanged");
+    assert!(!live_after.contains("99-test"));
 }
 
 #[test]
