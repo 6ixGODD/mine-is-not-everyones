@@ -41,6 +41,8 @@ Every successful mutation increments revision exactly once. Mutations accept `ex
 
 Writers acquire an exclusive lock, reload state, recheck revision, write atomically, then render Markdown from committed TOML.
 
+The exclusive lock is a cross-platform (POSIX and Windows) advisory file lock. Per `AGENTS.md` ("Business code must not use `unsafe`"), `mine` core Rust code (`src/`) must implement this lock through a maintained, vetted external locking crate (for example `fs4`, the maintained successor to `fs2`, which wraps the platform lock APIs — POSIX `flock`/`fcntl` and Windows `LockFileEx` — behind a safe `std::fs::File` extension trait) rather than hand-written `unsafe extern` FFI blocks in this repository's own source. Any `unsafe` needed to call the platform lock API must live inside the vetted dependency, not inside `mine`'s own crate. Adding this dependency is a routine `Cargo.toml`/`Cargo.lock` change and does not require a design exception.
+
 ## Plan-workspace purge safety
 
 `mine workspace close --purge-plan-workspace` may delete only canonical repository-relative `docs/plan/` after all gates pass.

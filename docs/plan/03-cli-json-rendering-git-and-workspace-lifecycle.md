@@ -20,7 +20,9 @@ Implement the human and JSON CLI, deterministic graph rendering, read-only and m
 
 ## Hard predecessors
 
-02
+02-1
+
+Note: originally `02`. `docs/plan/02-execution-graph-domain-and-persistence.md` was independently reviewed and `REJECTED` (see `docs/plan/reports/02-execution-graph-domain-and-persistence-review.md`) for an undisclosed `unsafe` file-locking implementation that violates `AGENTS.md`'s "Business code must not use `unsafe`" rule. `docs/plan/02-1-execution-graph-safe-file-locking.md` is the compensating plan; this predecessor edge was rerouted before Plan 03 execution began, per the reviewer's compensation routing. This plan had not started execution at the time of the edit, so it is not yet immutable.
 
 ## Governing design references
 
