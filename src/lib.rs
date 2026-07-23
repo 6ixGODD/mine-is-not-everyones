@@ -2,9 +2,12 @@
 //!
 //! Plan 01 implements the deterministic initialization service, the
 //! design-namespace marker validation, and repository identity/version
-//! persistence. The CLI adapter, MCP server, execution-graph state machine,
-//! rendering, and distribution are delivered by later plans and consume this
-//! library through the application services.
+//! persistence. Plan 02 implements the execution-graph domain and safe
+//! persistence. Plan 03 implements the CLI, JSON/human output, deterministic
+//! rendering, read-only Git evidence, design backup, workspace lifecycle,
+//! and the plan-lifecycle commands. The CLI adapter, MCP server, and
+//! distribution are wired progressively; later plans add MCP, Skills
+//! integration, and distribution.
 
 // `AGENTS.md` mandates "Business code must not use `unsafe`." Enforce it at
 // compile time across the whole `mine` library crate so the gate cannot be
@@ -15,5 +18,8 @@
 #![forbid(unsafe_code)]
 
 pub mod application;
+pub mod cli;
 pub mod domain;
 pub mod infrastructure;
+pub mod output;
+pub mod render;
