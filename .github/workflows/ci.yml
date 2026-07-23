@@ -1,0 +1,44 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - master
+      - dev
+      - "plan/**"
+  pull_request:
+
+# Release, bootstrap, and multi-platform artifact workflows are owned by Plan 08.
+# This workflow provides the foundational Rust quality gates only.
+
+jobs:
+  rust-quality:
+    name: Rust quality gates (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Print toolchain
+        run: |
+          rustc --version
+          cargo --version
+
+      - name: cargo fmt
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: cargo test
+        run: cargo test --all-targets --all-features
