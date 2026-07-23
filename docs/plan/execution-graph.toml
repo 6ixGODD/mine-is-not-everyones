@@ -1,5 +1,5 @@
 schema_version = 1
-revision = 12
+revision = 13
 project_id = "mine-is-not-everyones"
 workspace_id = "bootstrap-mine-v1"
 stable_branch = "master"
@@ -97,7 +97,7 @@ compensating_plan = ""
 id = "04"
 path = "docs/plan/04-skills-json-cli-mine-sync-and-design-lifecycle.md"
 title = "Skills JSON-CLI, mine-sync, and design lifecycle"
-status = "IMPLEMENTED"
+status = "ACCEPTED"
 hard_predecessors = ["03"]
 soft_predecessors = []
 design_references = ["docs/design/integrations/skills.md", "docs/design/governance/design-knowledge-base.md", "docs/design/governance/design-sync.md", "docs/design/interfaces/cli-contract.md", "docs/design/decisions/0005-code-authority-during-mine-sync.md"]
@@ -110,7 +110,7 @@ implementation_commits = ["ef4c6fbc5c75ff8e65c7f800326715256380ea15", "9467a9134
 owner = "plan-04"
 run_id = "plan-04-skills"
 started_at = "2026-07-23T22:38:12.4773558Z"
-updated_at = "2026-07-23T22:56:17.1860526Z"
+updated_at = "2026-07-23T23:29:20.5421962Z"
 rejection_reason = ""
 compensating_plan = ""
 
