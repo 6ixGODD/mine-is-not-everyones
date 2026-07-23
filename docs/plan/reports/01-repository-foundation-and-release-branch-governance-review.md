@@ -108,6 +108,16 @@ Per the authorized bootstrap procedure and this review's `ACCEPTED` verdict:
 2. No worktree merge into `dev` has been performed yet by this review action; merging the accepted `plan/01-repository-foundation-and-release-branch-governance` branch into `dev` and deleting the local plan branch is the next bootstrap step, to be executed as an explicit follow-up commit under the same standing authorization (kept separate from this review-report commit to preserve a clean audit trail).
 3. No files were staged or committed as part of producing this review beyond the review report itself.
 
+## Post-acceptance bootstrap graph transition
+
+On `2026-07-23T17:26:06Z`, the execution-graph state was transitioned manually as bootstrap-only bookkeeping, because the `mine` lifecycle CLI/MCP (Plan 03) is not yet implemented. Per the documented bootstrap exception in `AGENTS.md` (MINE graph discipline) and this report's *Downstream release* section, the following minimum consistent state transition was applied directly to `docs/plan/execution-graph.toml` and regenerated in `docs/plan/execution-graph.md`:
+
+- Plan 01: `READY` -> `ACCEPTED`, with `implementation_commits` (`f1edf81`, `8a55e3a`, `7c14f39`, `7da99ef`) and the graph-level `stable_baseline_commit` (`1d3a132`) recorded.
+- Plan 02: `BLOCKED` -> `READY` (Plan 01 was its only unresolved hard predecessor and is now `ACCEPTED`).
+- `revision`: `0` -> `1`.
+
+This manual transition does not reopen or alter this review's `ACCEPTED` verdict, which was issued independently above; no implementation agent self-granted acceptance. Once Plan 03 implements `mine plan accept` / `mine plan implemented`, all such transitions must go through the CLI/MCP and this manual procedure must not be repeated.
+
 ## Handoff summary
 
 **ACCEPTED.** Plan 01's implementation independently verified: idempotent, setup-only `mine init` logic; correct namespace-conflict and ownership-mismatch handling; preserved pre-existing repository identity; zero-warning `cargo fmt`/`clippy`/`test` gates (26/26 tests passing, independently re-run); no branch, plan, commit, agent, or business-code mutation capability exists in the delivered code; no premature Plan 02+ (CLI/graph) implementation; full preservation of all unrelated files verified via diff. Two low-severity, already-disclosed scope notes (`.gitattributes` outside declared exclusive paths; `docs/plan/` present on the bootstrap stable baseline pending Plan 08 closure) do not block acceptance. Downstream Plan 02 is released. Next action: merge `plan/01-repository-foundation-and-release-branch-governance` into `dev` and record the accepted state (`stable_baseline_commit`, `implementation_commits`, reviewer verdict) in the execution graph once Plan 03's tooling exists, per the bootstrap exception already documented in `AGENTS.md`.
