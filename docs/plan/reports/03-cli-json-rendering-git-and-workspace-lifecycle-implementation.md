@@ -13,7 +13,7 @@
 | Integration branch | `dev` (`def825ad50dee00efdb94dda8a8bd5b50549a28a` at branch creation; this plan does not merge into it) |
 | Plan branch | `plan/03-cli-json-rendering-git-and-workspace-lifecycle` (from clean `dev` at `def825a`) |
 | Start-bookkeeping commit | `82889239cb6536cdedc9d5a25227b35e94311f63` — Plan 03 `READY`→`IN_PROGRESS`, revision `5`→`6`, ownership/timestamps, markdown synchronized |
-| Implementation commits | `eaa67f00cabb26c81f08d021d2e1d501a6c0ecda`, `aaeda71f74de718a339b966fbb2181229dc137f3`, `efc7f6f03cb6907d9327fd223ed9eb2c008197ff`, `434cb9f3148d3ac36a9779d7669926d5161cce3b`, `e3cc16ec91a141d1e7009e430bc8d746b75a792c` |
+| Implementation commits | `eaa67f00cabb26c81f08d021d2e1d501a6c0ecda`, `aaeda71f74de718a339b966fbb2181229dc137f3`, `efc7f6f03cb6907d9327fd223ed9eb2c008197ff`, `434cb9f3148d3ac36a9779d7669926d5161cce3b`, `e3cc16ec91a141d1e7009e430bc8d746b75a792c`, `591decf...` (test-isolation fix, see WP7) |
 
 Nothing was merged into `dev`, nothing was pushed, `master` was not touched, no `plan/04*`/`plan/05*` branch was created, and downstream Plans were not released.
 
@@ -24,6 +24,7 @@ Nothing was merged into `dev`, nothing was pushed, `master` was not touched, no 
 3. `efc7f6f` `feat(cli): command dispatcher, JSON/human output, plan/graph/design commands` — `src/cli/{commands,context,mod}.rs`.
 4. `434cb9f` `feat(crate): wire cli/output/render modules and bin entry` — `src/lib.rs`, `src/main.rs`, `src/application/mod.rs`, `src/infrastructure/mod.rs`.
 5. `e3cc16e` `test(cli): end-to-end CLI integration and golden rendering tests` — `tests/cli.rs`, `tests/golden.rs`.
+6. `591decf` `test(cli): isolate write-path plan tests from the live repo graph` — `tests/cli.rs` (test-isolation fix, see WP7).
 
 ## Changed files (18 implementation files vs start commit `8288923`; +3898 / −23)
 
@@ -82,6 +83,8 @@ tests/golden.rs                         (new, 149 lines)
 ### WP7 — Windows paths, legacy namespace conflict, backup failure, external links, workspace identity, release hygiene
 
 Asserted by `tests/cli.rs` (15 tests) and `tests/golden.rs` (4 tests), including the real-graph byte round-trip via `graph validate`/`render`, no-Git-mutation invariant, legacy namespace conflict (exit 3), backup round-trip + `.gitignore`, revision-conflict exit 5, plan transition gates, and stable sorted envelope keys.
+
+**Test-isolation fix (recorded for the reviewer).** Two CLI tests originally routed `plan start` / `plan accept` write paths through the **live** repository graph. On the first full `cargo test` pass after completion bookkeeping (Plan 03 transitioned `IN_PROGRESS`→`IMPLEMENTED`), the `plan_accept` test legitimately accepted Plan 03 (now `IMPLEMENTED`) and released Plans 04/05 by exercising the live graph mutation — directly crossing the bootstrap boundary this Plan's execution instructions forbid (the newly implemented CLI must not self-authorize its own acceptance). A `git checkout` restored the graph to revision 7 / `IMPLEMENTED`, and both tests were rewritten to operate on a **temp copy** of the real graph (`temp_copy_of_real_graph`), with the accept test additionally injecting a synthetic `IN_PROGRESS` plan node so the accept write path is exercised against the copy only. A follow-up test commit (`591decf`) records the fix. The suite now runs stable for 3 consecutive passes with the live `docs/plan/execution-graph.toml` byte-identical before and after each run.
 
 ## Verification
 

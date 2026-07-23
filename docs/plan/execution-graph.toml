@@ -1,5 +1,5 @@
 schema_version = 1
-revision = 7
+revision = 8
 project_id = "mine-is-not-everyones"
 workspace_id = "bootstrap-mine-v1"
 stable_branch = "master"
@@ -85,11 +85,11 @@ read_only_paths = ["REQUIREMENTS.md", "docs/design/"]
 reserved_shared_paths = ["docs/plan/execution-graph.toml", "docs/plan/execution-graph.md"]
 implementation_report = "docs/plan/reports/03-cli-json-rendering-git-and-workspace-lifecycle-implementation.md"
 review_report = "docs/plan/reports/03-cli-json-rendering-git-and-workspace-lifecycle-review.md"
-implementation_commits = ["eaa67f00cabb26c81f08d021d2e1d501a6c0ecda", "aaeda71f74de718a339b966fbb2181229dc137f3", "efc7f6f03cb6907d9327fd223ed9eb2c008197ff", "434cb9f3148d3ac36a9779d7669926d5161cce3b", "e3cc16ec91a141d1e7009e430bc8d746b75a792c"]
+implementation_commits = ["eaa67f00cabb26c81f08d021d2e1d501a6c0ecda", "aaeda71f74de718a339b966fbb2181229dc137f3", "efc7f6f03cb6907d9327fd223ed9eb2c008197ff", "434cb9f3148d3ac36a9779d7669926d5161cce3b", "e3cc16ec91a141d1e7009e430bc8d746b75a792c", "591decfe7087624e3bfb77ab5be6556204b20490"]
 owner = "bootstrap"
 run_id = "plan-03-bootstrap"
 started_at = "2026-07-23T20:57:52Z"
-updated_at = "2026-07-23T21:45:08Z"
+updated_at = "2026-07-23T21:53:40Z"
 rejection_reason = ""
 compensating_plan = ""
 
