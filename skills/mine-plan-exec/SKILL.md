@@ -26,8 +26,8 @@ current branch ready for review. Do not merely describe the work.
 Before modifying anything, locate the repository root and read these sources completely in this order:
 
 1. Root `AGENTS.md`.
-2. The architecture source named by `AGENTS.md`.
-3. Query the plan and graph through `mine_plan_get` / `mine_graph_status` or JSON CLI; use `docs/plan/execution-graph.md` only as a generated readable view.
+2. The design knowledge base rooted at `docs/design/index.md` (and the relevant leaves named by `AGENTS.md`).
+3. Query the plan and graph through `mine plan show --id <id> --format json` and `mine graph status --format json`; use `docs/plan/execution-graph.md` only as a generated readable view.
 4. The requested plan.
 5. `docs/plan/parallel-execution-protocol.md` when the plan declares a parallel lane.
 6. Every hard-predecessor acceptance report and the commits named by those reports.
@@ -74,7 +74,7 @@ Before editing, inspect `git status --short`, the current branch, and staged cha
 Dirty status alone is not a blocker. Shared files are a blocker only when existing edits overlap the plan and cannot be preserved or
 integrated safely. Stage explicit paths only; never use `git add .` or `git add -A` in a dirty workspace.
 
-Before editing production files, read the current revision and call `mine_plan_start` or the final `mine plan start --format json` command with the plan owner and `expected_revision`. Proceed only after MINE returns `IN_PROGRESS`. Never edit either execution-graph file directly. For parallel lanes, MINE remains the serialized status owner and the plan's path ownership rules remain mandatory.
+Before editing production files, read the current revision with `mine graph status --format json` (carry `data.revision` as `expected_revision`) and call `mine plan start --id <id> --owner <owner> --run-id <run> --format json`. Proceed only after MINE returns `IN_PROGRESS` (exit 0). The accepted MINE CLI reads the current revision under the lock itself; it emits `revision_before`/`revision_after` in the envelope. Never edit either execution-graph file directly. For parallel lanes, MINE remains the serialized status owner and the plan's path ownership rules remain mandatory.
 
 For a parallel lane, obey its exclusive write paths and read-only dependencies exactly. Do not edit reserved shared files, even to register
 an import, CLI command, dependency, or fixture; record those needs as integration requests for the final integration plan. Never run two
@@ -154,8 +154,7 @@ Set the implementation report conclusion to:
 - `IN_PROGRESS` when required in-scope work remains;
 - never `ACCEPTED` merely because the implementing agent wrote the report.
 
-`ACCEPTED` requires the reviewer process defined by `AGENTS.md`. After committing the implementation and report, call `mine_plan_mark_implemented` (or the final JSON CLI equivalent) with the report, commits, and expected revision. The reviewer later performs the accept/reject transition through MINE.
-Do not release downstream plans while the node is only `IMPLEMENTED`.
+`ACCEPTED` requires the reviewer process defined by `AGENTS.md`. After committing the implementation and report, call `mine plan implemented --id <id> --report <report path> --commit <hash> --format json` (repeat `--commit` for each implementation commit) — the accepted MINE CLI reads the current revision under the lock and emits `revision_before`/`revision_after`. The reviewer later performs the accept/reject transition through MINE. Do not release downstream plans while the node is only `IMPLEMENTED`.
 
 Commit the report and, only when owned, final graph status using explicit paths. Parallel lane agents never stage the graph. Verify the resulting commit and confirm the assigned branch contains every implementation/report commit. For a non-parallel plan, no hidden merge step may remain. For a parallel lane, report the exact branch/worktree, commits, and declared join artifact required by the integration owner; do not merge it yourself unless the plan assigns integration ownership.
 
