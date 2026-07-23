@@ -1,0 +1,28 @@
+[package]
+name = "mine"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "MINE Is Not Everyone's: deterministic engineering-workflow core for Claude Code, Codex, Pi, and OpenCode"
+license = "MIT"
+authors = ["BoChen SHEN"]
+repository = "https://github.com/6ixGODD/mine-is-not-everyones"
+publish = false
+
+[lib]
+name = "mine"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mine"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+thiserror = "2"
+uuid = { version = "1", features = ["v4"] }
+time = { version = "0.3", features = ["formatting"] }
+
+[dev-dependencies]
+tempfile = "3"
