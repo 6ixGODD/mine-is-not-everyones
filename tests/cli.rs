@@ -207,12 +207,32 @@ fn graph_render_is_deterministic_and_idempotent() {
     );
 }
 
+/// Copies the real repository graph to a temp repo so write-path plan tests
+/// never touch the live `docs/plan/execution-graph.toml`.
+fn temp_copy_of_real_graph() -> tempfile::TempDir {
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(tmp.path().join("docs/plan")).unwrap();
+    std::fs::create_dir_all(tmp.path().join(".mine")).unwrap();
+    let cfg = mine::cli::context::load_config(&repo_root).expect("real config exists");
+    std::fs::write(tmp.path().join(".mine/config.toml"), cfg.to_toml()).unwrap();
+    std::fs::copy(
+        repo_root.join("docs/plan/execution-graph.toml"),
+        tmp.path().join("docs/plan/execution-graph.toml"),
+    )
+    .unwrap();
+    tmp
+}
+
 #[test]
 fn plan_start_refuses_non_ready_plan() {
-    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    // Plan 02-1 is ACCEPTED (terminal): `plan start` must be refused. Operate
+    // on a TEMP COPY so the write path is never exercised against the live
+    // repository graph.
+    let tmp = temp_copy_of_real_graph();
     let outcome = cli::dispatch(
         &run(
-            repo_root.to_str().unwrap(),
+            tmp.path().to_str().unwrap(),
             &["plan", "start", "--id", "02-1", "--format", "json"],
         ),
         "mine",
@@ -224,16 +244,58 @@ fn plan_start_refuses_non_ready_plan() {
     let env = envelope_json(&outcome);
     assert_eq!(env["ok"], false);
     assert_eq!(env["error"]["code"], "MINE_INVALID_TRANSITION");
+    // Live graph unchanged.
+    let live = std::fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/plan/execution-graph.toml"),
+    )
+    .unwrap();
+    assert!(live.contains("revision = 7"));
 }
 
 #[test]
 fn plan_accept_requires_implemented_state() {
-    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    // `plan accept` must be refused for a plan that is NOT `IMPLEMENTED`. We
+    // operate on a TEMP COPY of the real graph and inject an IN_PROGRESS
+    // synthetic plan node so the accept write path is exercised against the
+    // copy only, never the live repository graph.
+    let tmp = temp_copy_of_real_graph();
+    let toml_path = tmp.path().join("docs/plan/execution-graph.toml");
+    let mut ws = toml::from_str::<mine::domain::graph::PlanWorkspace>(
+        &std::fs::read_to_string(&toml_path).unwrap(),
+    )
+    .unwrap();
+    use mine::domain::graph::PlanNode;
+    use mine::domain::status::PlanStatus;
+    // Plan 02-1 is ACCEPTED; reuse it as a resolved hard predecessor. The
+    // synthetic plan is IN_PROGRESS (not IMPLEMENTED); accepting it must fail.
+    ws.plans.push(PlanNode {
+        id: "99-test".to_string(),
+        path: "docs/plan/99-test.md".to_string(),
+        title: "99-test".to_string(),
+        status: PlanStatus::InProgress,
+        hard_predecessors: vec!["02-1".to_string()],
+        soft_predecessors: vec![],
+        design_references: vec!["docs/design/principles.md".to_string()],
+        exclusive_write_paths: vec!["tests/noop/".to_string()],
+        read_only_paths: vec![],
+        reserved_shared_paths: vec![],
+        implementation_report: String::new(),
+        review_report: String::new(),
+        implementation_commits: vec![],
+        owner: "tester".to_string(),
+        run_id: "test".to_string(),
+        started_at: "2026-07-23T00:00:00Z".to_string(),
+        updated_at: "2026-07-23T00:00:00Z".to_string(),
+        rejection_reason: String::new(),
+        compensating_plan: String::new(),
+    });
+    std::fs::write(&toml_path, toml::to_string(&ws).unwrap()).unwrap();
+
     let outcome = cli::dispatch(
         &run(
-            repo_root.to_str().unwrap(),
+            tmp.path().to_str().unwrap(),
             &[
-                "plan", "accept", "--id", "03", "--review", "none.md", "--format", "json",
+                "plan", "accept", "--id", "99-test", "--review", "none.md", "--format", "json",
             ],
         ),
         "mine",
@@ -241,6 +303,21 @@ fn plan_accept_requires_implemented_state() {
     assert_eq!(outcome.exit_code, 4);
     let env = envelope_json(&outcome);
     assert_eq!(env["error"]["code"], "MINE_INVALID_TRANSITION");
+    // Temp copy unchanged (rejected transition must not mutate): still the
+    // original revision; the injected plan is still present.
+    let after = std::fs::read_to_string(&toml_path).unwrap();
+    assert!(
+        after.contains("revision = 7"),
+        "temp graph unchanged by rejected accept"
+    );
+    assert!(after.contains("99-test"));
+    // Live graph fully untouched, and the injected test plan did not leak.
+    let live = std::fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/plan/execution-graph.toml"),
+    )
+    .unwrap();
+    assert!(live.contains("revision = 7"));
+    assert!(!live.contains("99-test"));
 }
 
 #[test]
