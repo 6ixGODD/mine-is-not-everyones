@@ -1,3 +1,6 @@
+// Enforce no `unsafe` in MINE-owned test crates either (see src/lib.rs).
+#![forbid(unsafe_code)]
+
 //! Domain-level integration tests for the execution graph.
 //!
 //! These exercise the pure domain rules end to end: status transitions, path

@@ -1,19 +1,24 @@
 //! Exclusive advisory file locking with a bounded wait.
 //!
-//! `docs/design/execution-graph/persistence-and-concurrency.md` requires that
-//! graph writers acquire an exclusive lock, reload state, recheck revision,
-//! write atomically, then render. This module provides a cross-platform
-//! exclusive lock on `.mine/locks/<name>.lock`.
+//! `docs/design/execution-graph/persistence-and-concurrency.md` ("Revision
+//! and locking") requires that graph writers acquire an exclusive lock, reload
+//! state, recheck revision, write atomically, then render. It also mandates
+//! (per `AGENTS.md` "Business code must not use `unsafe`") that the lock be
+//! implemented through a maintained, vetted external locking crate rather than
+//! hand-written `unsafe extern` FFI in `mine`'s own crate.
 //!
-//! Locking strategy:
-//! - **POSIX**: `fcntl(F_SETLK)` advisory exclusive lock on an open file
-//!   descriptor. The lock is released when the descriptor closes.
-//! - **Windows**: `LockFileEx` exclusive lock on the file handle. The lock is
-//!   released when the handle closes.
+//! This module provides a cross-platform exclusive lock on
+//! `.mine/locks/<name>.lock` using the [`fs4`] crate (the maintained successor
+//! to `fs2`). `fs4`'s `FileExt` trait wraps the platform lock APIs — POSIX
+//! `flock(2)` (via `rustix`) and Windows `LockFileEx` — behind a safe
+//! `std::fs::File` extension trait. The lock is whole-file and advisory; it is
+//! held until the owning file handle is closed (or explicitly unlocked), i.e.
+//! released on `Drop` of [`FileLock`].
 //!
-//! Both are advisory and process-wide. The lock file is created if absent.
-//! Holding a `FileLock` guard keeps the handle open and the lock held; dropping
-//! it releases the lock.
+//! `flock` (POSIX) and `LockFileEx` (Windows) both model the lock per
+//! open-file-description/handle, so a second open in the *same* process
+//! contends with a held exclusive lock. Contention is therefore observable
+//! within one process (and one thread), which the tests rely on.
 
 use std::fs::{self, OpenOptions};
 use std::io;
@@ -25,11 +30,15 @@ use crate::domain::error::{MineError, MineResult};
 /// Polling interval used while waiting for a contended lock.
 const POLL_INTERVAL: Duration = Duration::from_millis(25);
 
-/// An exclusive file lock guard. The lock is held while this value is alive
-/// and released on drop.
+/// An exclusive file-lock guard. The lock is held while this value is alive
+/// and released when it is dropped (the underlying file handle closes, which
+/// releases the OS advisory lock).
+#[derive(Debug)]
 pub struct FileLock {
+    // The file handle holds the OS lock for its lifetime. It is intentionally
+    // never read; it exists only to keep the lock held until `Drop`.
     #[allow(dead_code)]
-    handle: LockHandle,
+    file: std::fs::File,
     path: PathBuf,
 }
 
@@ -43,8 +52,14 @@ impl FileLock {
 
 impl Drop for FileLock {
     fn drop(&mut self) {
-        // Releasing happens implicitly when the OS handle closes. The
-        // `LockHandle` drop closes the file.
+        // Ensure the OS advisory lock is released explicitly before the handle
+        // closes, then let `file` auto-drop (closing the handle). Errors are
+        // ignored: a release failure does not change the fact that closing the
+        // handle frees the lock at the OS level. Use the fully-qualified fs4
+        // path so this resolves to fs4's trait method, not std 1.89+'s inherent
+        // `File::unlock` (the two use the same OS primitive and interoperate,
+        // but staying on fs4's API keeps the locking implementation uniform).
+        let _ = fs4::FileExt::unlock(&self.file);
     }
 }
 
@@ -67,19 +82,23 @@ pub fn acquire_exclusive(lock_path: &Path, timeout: Duration) -> MineResult<File
             detail: "timeout overflow".to_string(),
         })?;
 
-    // Open (create if needed) the lock file. We keep the handle open for the
-    // lock lifetime.
-    let mut handle = open_lock_file(lock_path)?;
+    // Open (create if needed) the lock file. The exclusive advisory lock is
+    // taken on this handle via fs4's safe `FileExt::try_lock`.
+    let file = open_lock_file(lock_path)?;
 
     loop {
-        match try_lock_exclusive(&mut handle) {
+        // Fully-qualified call so this resolves to fs4's `FileExt::try_lock`
+        // (returning `fs4::TryLockError`), not std 1.89+'s inherent
+        // `File::try_lock` (which returns `std::fs::TryLockError`). Both back
+        // onto the same OS primitive; fs4 is the vetted dependency we standardize on.
+        match fs4::FileExt::try_lock(&file) {
             Ok(()) => {
                 return Ok(FileLock {
-                    handle,
+                    file,
                     path: lock_path.to_path_buf(),
                 });
             }
-            Err(TryLockError::WouldBlock) => {
+            Err(fs4::TryLockError::WouldBlock) => {
                 if Instant::now() >= deadline {
                     return Err(MineError::LockTimeout {
                         path: lock_path.to_path_buf(),
@@ -87,10 +106,8 @@ pub fn acquire_exclusive(lock_path: &Path, timeout: Duration) -> MineResult<File
                     });
                 }
                 std::thread::sleep(POLL_INTERVAL);
-                // Re-open in case the file was replaced by another writer.
-                handle = open_lock_file(lock_path)?;
             }
-            Err(TryLockError::Other(e)) => {
+            Err(fs4::TryLockError::Error(e)) => {
                 return Err(MineError::Io(e));
             }
         }
@@ -125,156 +142,14 @@ fn is_sharing_violation(e: &io::Error) -> bool {
     e.raw_os_error() == Some(32)
 }
 
-fn open_lock_file(path: &Path) -> MineResult<LockHandle> {
+fn open_lock_file(path: &Path) -> MineResult<std::fs::File> {
     let file = OpenOptions::new()
         .read(true)
         .write(true)
         .create(true)
         .truncate(false)
         .open(path)?;
-    Ok(LockHandle { file })
-}
-
-// ---------- platform locking ----------
-
-/// Wraps the OS file handle that holds the advisory lock. The lock is released
-/// when this is dropped (the underlying file handle closes).
-struct LockHandle {
-    file: std::fs::File,
-}
-
-impl Drop for LockHandle {
-    fn drop(&mut self) {
-        // Closing the descriptor/handle releases the OS lock.
-        let _ = self.file.sync_all();
-    }
-}
-
-enum TryLockError {
-    WouldBlock,
-    Other(io::Error),
-}
-
-#[cfg(unix)]
-fn try_lock_exclusive(handle: &mut LockHandle) -> Result<(), TryLockError> {
-    use std::os::unix::io::AsRawFd;
-    let file = &handle.file;
-    // fcntl F_SETLK advisory exclusive lock.
-    let fd = file.as_raw_fd();
-    let mut flock = libc_flock {
-        l_type: F_WRLCK as i16,
-        l_whence: 0,
-        l_start: 0,
-        l_len: 0, // lock entire file
-        l_pid: 0,
-    };
-    let rc = unsafe { fcntl_setlk(fd, &mut flock) };
-    if rc == 0 {
-        Ok(())
-    } else {
-        let err = io::Error::last_os_error();
-        if err.raw_os_error() == Some(EAGAIN) || err.raw_os_error() == Some(EACCES) {
-            Err(TryLockError::WouldBlock)
-        } else {
-            Err(TryLockError::Other(err))
-        }
-    }
-}
-
-#[cfg(windows)]
-fn try_lock_exclusive(handle: &mut LockHandle) -> Result<(), TryLockError> {
-    use std::os::windows::io::AsRawHandle;
-    let file = &handle.file;
-    let raw = file.as_raw_handle();
-    // LockFileEx exclusive (LOCKFILE_EXCLUSIVE_LOCK = 0x02). Lock byte range
-    // [0, 1) of the file.
-    let mut overlapped = Overlapped {
-        internal: 0,
-        internal_high: 0,
-        offset_low: 0,
-        offset_high: 0,
-        event: std::ptr::null_mut(),
-    };
-    // Flags: LOCKFILE_EXCLUSIVE_LOCK. Non-blocking (no LOCKFILE_FAIL_IMMEDIATELY
-    // would block; we want fail-immediate so we poll ourselves).
-    const LOCKFILE_EXCLUSIVE_LOCK: u32 = 0x0000_0002;
-    const LOCKFILE_FAIL_IMMEDIATELY: u32 = 0x0000_0001;
-    let rc = unsafe {
-        LockFileEx(
-            raw as *mut _,
-            LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
-            0,
-            1, // lock 1 byte starting at offset 0
-            0,
-            &mut overlapped,
-        )
-    };
-    if rc != 0 {
-        Ok(())
-    } else {
-        let err = io::Error::last_os_error();
-        // ERROR_LOCK_VIOLATION (33) means contended.
-        if err.raw_os_error() == Some(33) {
-            Err(TryLockError::WouldBlock)
-        } else {
-            Err(TryLockError::Other(err))
-        }
-    }
-}
-
-// ---------- Windows FFI ----------
-
-#[cfg(windows)]
-#[repr(C)]
-struct Overlapped {
-    internal: usize,
-    internal_high: usize,
-    offset_low: u32,
-    offset_high: u32,
-    event: *mut std::ffi::c_void,
-}
-
-#[cfg(windows)]
-unsafe extern "system" {
-    fn LockFileEx(
-        hfile: *mut std::ffi::c_void,
-        dwflags: u32,
-        dwreserved: u32,
-        nnumberofbytestolocklow: u32,
-        nnumberofbytestolockhigh: u32,
-        lpoverlapped: *mut Overlapped,
-    ) -> i32;
-}
-
-// ---------- POSIX FFI ----------
-
-#[cfg(unix)]
-#[repr(C)]
-struct libc_flock {
-    l_type: i16,
-    l_whence: i16,
-    l_start: i64,
-    l_len: i64,
-    l_pid: i32,
-}
-
-#[cfg(unix)]
-const F_WRLCK: i16 = 1;
-#[cfg(unix)]
-const EAGAIN: i32 = 11;
-#[cfg(unix)]
-const EACCES: i32 = 13;
-
-#[cfg(unix)]
-unsafe extern "C" {
-    fn fcntl(fd: i32, cmd: i32, arg: *mut libc_flock) -> i32;
-}
-
-#[cfg(unix)]
-unsafe fn fcntl_setlk(fd: i32, flock: &mut libc_flock) -> i32 {
-    // F_SETLK = 6 on most POSIX systems.
-    const F_SETLK: i32 = 6;
-    fcntl(fd, F_SETLK, flock as *mut libc_flock)
+    Ok(file)
 }
 
 #[cfg(test)]
@@ -287,6 +162,7 @@ mod tests {
         let lock_path = dir.path().join("test.lock");
         let lock = acquire_exclusive(&lock_path, Duration::from_millis(500)).unwrap();
         assert!(lock_path.exists());
+        assert_eq!(lock.path(), lock_path);
         drop(lock);
         // Re-acquire after release.
         let _lock2 = acquire_exclusive(&lock_path, Duration::from_millis(500)).unwrap();
@@ -294,19 +170,20 @@ mod tests {
 
     #[test]
     fn contended_lock_times_out() {
+        // fs4 uses flock (POSIX) / LockFileEx (Windows), both modeled per
+        // open-file-description/handle, so a second open of the same lock file
+        // in the same process contends with the held exclusive lock on every
+        // platform. The second acquisition must therefore time out (not hang),
+        // and reacquisition must succeed once the first guard is released.
         let dir = tempfile::tempdir().unwrap();
         let lock_path = dir.path().join("contended.lock");
-        let _held = acquire_exclusive(&lock_path, Duration::from_millis(500)).unwrap();
-        // A second acquisition in the same process: on Windows, LockFileEx is
-        // per-handle, so a second handle on the same file conflicts; on POSIX,
-        // fcntl locks are per-process so the same process would not conflict.
-        // This test therefore asserts timeout only where the platform models
-        // per-handle contention. We accept either outcome but require the call
-        // to terminate (not hang).
-        let result = acquire_exclusive(&lock_path, Duration::from_millis(200));
-        // On POSIX same-process, this succeeds (no contention); on Windows it
-        // times out. Either is acceptable; the key invariant is no hang.
-        let _ = result;
+        let held = acquire_exclusive(&lock_path, Duration::from_millis(500)).unwrap();
+        let err = acquire_exclusive(&lock_path, Duration::from_millis(200))
+            .expect_err("second acquire must contend with the held lock");
+        assert_eq!(err.code(), "MINE_LOCK_TIMEOUT");
+        // Releasing the first guard lets a fresh acquisition succeed.
+        drop(held);
+        let _again = acquire_exclusive(&lock_path, Duration::from_millis(500)).unwrap();
     }
 
     #[test]

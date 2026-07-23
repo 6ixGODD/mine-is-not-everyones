@@ -1,3 +1,6 @@
+// Enforce no `unsafe` in MINE-owned test crates either (see src/lib.rs).
+#![forbid(unsafe_code)]
+
 //! Persistence-level integration tests for the execution graph.
 //!
 //! These exercise the infrastructure: TOML load/save round-trip, revision
@@ -63,9 +66,10 @@ fn sample_workspace(rev: u64) -> PlanWorkspace {
 }
 
 /// The real repository graph must parse, validate, and round-trip through the
-/// domain model without drift. This proves Plan 02's TOML model is
-/// byte-compatible with the bootstrap fact source (including `IN_PROGRESS`,
-/// `ACCEPTED` statuses and the flat-string-array design references).
+/// domain model without drift. This proves the TOML model is byte-compatible
+/// with the bootstrap fact source (including `ACCEPTED`/`IN_PROGRESS`/`REJECTED`
+/// statuses, the compensating Plan 02-1 node, and the flat-string-array design
+/// references).
 #[test]
 fn real_repository_graph_round_trips_byte_for_byte() {
     let original = std::fs::read_to_string(real_graph_path())
@@ -84,8 +88,17 @@ fn real_repository_graph_round_trips_byte_for_byte() {
         "real execution-graph.toml must round-trip byte-for-byte"
     );
 
-    // The graph currently has 8 plans with the bootstrap state.
-    assert_eq!(ws.plans.len(), 8);
+    // The bootstrap graph now carries the compensating Plan 02-1 node (Plan 02
+    // was REJECTED and compensated). Assert the compensation node round-trips.
+    assert!(
+        ws.plans.len() >= 9,
+        "bootstrap graph must include the 02-1 compensation node: got {} plans",
+        ws.plans.len()
+    );
+    assert!(
+        ws.get("02-1").is_some(),
+        "Plan 02-1 compensation node must round-trip"
+    );
     assert!(ws.revision >= 2);
     let p01 = ws.get("01").expect("plan 01 exists");
     assert_eq!(p01.status, PlanStatus::Accepted);
