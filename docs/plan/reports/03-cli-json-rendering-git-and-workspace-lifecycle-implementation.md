@@ -13,7 +13,7 @@
 | Integration branch | `dev` (`def825ad50dee00efdb94dda8a8bd5b50549a28a` at branch creation; this plan does not merge into it) |
 | Plan branch | `plan/03-cli-json-rendering-git-and-workspace-lifecycle` (from clean `dev` at `def825a`) |
 | Start-bookkeeping commit | `82889239cb6536cdedc9d5a25227b35e94311f63` — Plan 03 `READY`→`IN_PROGRESS`, revision `5`→`6`, ownership/timestamps, markdown synchronized |
-| Implementation commits | `eaa67f00cabb26c81f08d021d2e1d501a6c0ecda`, `aaeda71f74de718a339b966fbb2181229dc137f3`, `efc7f6f03cb6907d9327fd223ed9eb2c008197ff`, `434cb9f3148d3ac36a9779d7669926d5161cce3b`, `e3cc16ec91a141d1e7009e430bc8d746b75a792c`, `591decf...` (test-isolation fix, see WP7) |
+| Implementation commits | `eaa67f00cabb26c81f08d021d2e1d501a6c0ecda`, `aaeda71f74de718a339b966fbb2181229dc137f3`, `efc7f6f03cb6907d9327fd223ed9eb2c008197ff`, `434cb9f3148d3ac36a9779d7669926d5161cce3b`, `e3cc16ec91a141d1e7009e430bc8d746b75a792c`, `591decfe7087624e3bfb77ab5be6556204b20490`, `c16615d751a9a3104f34162f3c65fd573ad4b1ee` (test-isolation + bootstrap-revision-independence fixes, see WP7) |
 
 Nothing was merged into `dev`, nothing was pushed, `master` was not touched, no `plan/04*`/`plan/05*` branch was created, and downstream Plans were not released.
 
@@ -25,6 +25,7 @@ Nothing was merged into `dev`, nothing was pushed, `master` was not touched, no 
 4. `434cb9f` `feat(crate): wire cli/output/render modules and bin entry` — `src/lib.rs`, `src/main.rs`, `src/application/mod.rs`, `src/infrastructure/mod.rs`.
 5. `e3cc16e` `test(cli): end-to-end CLI integration and golden rendering tests` — `tests/cli.rs`, `tests/golden.rs`.
 6. `591decf` `test(cli): isolate write-path plan tests from the live repo graph` — `tests/cli.rs` (test-isolation fix, see WP7).
+7. `c16615d` `test(cli): make write-path plan tests independent of bootstrap revision` — `tests/cli.rs` (removes hard-coded `revision = 7` so the tests stay valid across future bootstrap transitions; stable for 4 consecutive runs, live graph byte-unchanged each run).
 
 ## Changed files (18 implementation files vs start commit `8288923`; +3898 / −23)
 

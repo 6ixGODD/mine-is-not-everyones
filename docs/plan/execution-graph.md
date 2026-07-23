@@ -7,7 +7,7 @@
 - Workspace: `bootstrap-mine-v1`
 - Stable branch: `master`
 - Integration branch: `dev`
-- Revision: `8`
+- Revision: `9`
 
 | Plan | Title | Status | Hard predecessors |
 |---|---|---|---|
