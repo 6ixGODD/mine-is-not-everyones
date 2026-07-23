@@ -1,0 +1,174 @@
+---
+name: mine-plan-exec
+description: Execute one repository implementation plan end to end in the current working tree. Use when the user invokes the host-specific mine-plan-exec skill with a plan file, asks to implement a plan created by mine-plan-create, or wants a governed plan execution with dependency checks, code changes, verification, acceptance reporting, commits, and execution-graph updates. Execute in the workspace supplied by the user or scheduler. Never create or switch branches/worktrees yourself unless explicitly authorized.
+---
+
+# MINE Plan Execute
+
+MINE Is Not Everyone's. Treat the supplied plan as an immutable execution contract. Implement it in the current working tree, verify it, report it, and leave the
+current branch ready for review. Do not merely describe the work.
+
+## Resolve the requested plan
+
+1. Read the invocation argument as the plan path. Accept Claude Code forms such as:
+
+   ```text
+   mine-plan-exec docs/plan/02-card-and-observation-encoding.md
+   mine-plan-exec docs/plan/02-card-and-observation-encoding.md
+   ```
+
+2. Strip only the invocation-level `@` marker and resolve the path relative to the repository root.
+3. Require exactly one existing Markdown plan. If no plan is supplied or the path is ambiguous, ask for the path before changing files.
+4. Never select a different plan merely because it appears ready in the execution graph.
+
+## Load governance and evidence
+
+Before modifying anything, locate the repository root and read these sources completely in this order:
+
+1. Root `AGENTS.md`.
+2. The architecture source named by `AGENTS.md`.
+3. Query the plan and graph through `mine_plan_get` / `mine_graph_status` or JSON CLI; use `docs/plan/execution-graph.md` only as a generated readable view.
+4. The requested plan.
+5. `docs/plan/parallel-execution-protocol.md` when the plan declares a parallel lane.
+6. Every hard-predecessor acceptance report and the commits named by those reports.
+7. Fetch and read the official sources or best-practice references explicitly registered by the plan; do not implement from the plan's paraphrase alone.
+8. Only the implementation files, tests, and documentation needed to verify current reality for this plan.
+
+Apply repository governance in this order: `AGENTS.md` → architecture → registered official sources → requested plan. A newer explicit user
+instruction may narrow or override the requested operation, but never silently rewrite the immutable plan.
+
+Convert the plan into an execution checklist before coding. For every implementation step identify its inputs, target files/interfaces,
+edge cases, verification, and acceptance item. Do not rediscover or change resolved product decisions.
+
+## Enforce the execution gate
+
+Read the execution graph rather than inferring readiness from filenames.
+
+- Require every hard predecessor to be `ACCEPTED` and backed by an implementation commit plus an acceptance report.
+- Require the requested node to be `READY` or already `IN_PROGRESS` for this same implementation.
+- If the node is `BLOCKED`, `CONDITIONAL` without its gate, `REJECTED`, or already `ACCEPTED`, do not implement it. Report the exact state
+  and missing evidence.
+- Treat an uncommitted predecessor or missing report as not accepted.
+- Detect conflicts between the graph, plan, architecture, reports, and code. Stop before mutation when the conflict changes scope, contracts,
+  or acceptance criteria; explain the concrete conflict to the user.
+
+Do not edit, rename, renumber, delete, or append to the requested plan or any earlier immutable plan. If implementation proves the plan or
+architecture wrong, stop and request a compensating design/plan instead of improvising.
+
+## Work in the assigned workspace
+
+Execute on the branch and working tree supplied by the user or parallel scheduler. A scheduler may start this skill inside an already-created isolated worktree; treat that workspace as authoritative.
+
+- Do not create another Git worktree.
+- Do not create or switch branches.
+- Do not stash, reset, clean, restore, checkout, or discard existing changes.
+- Do not tell the user to merge a hidden implementation branch afterward.
+- Do not delegate plan execution unless the user explicitly requests delegation.
+
+Before editing, inspect `git status --short`, the current branch, and staged changes. Classify existing changes as:
+
+- **same-plan work**: inspect and continue it rather than duplicating it;
+- **unrelated work**: preserve it and exclude it from plan commits;
+- **ambiguous overlap**: investigate with diffs and history; ask the user only if safe integration cannot be determined.
+
+Dirty status alone is not a blocker. Shared files are a blocker only when existing edits overlap the plan and cannot be preserved or
+integrated safely. Stage explicit paths only; never use `git add .` or `git add -A` in a dirty workspace.
+
+Before editing production files, read the current revision and call `mine_plan_start` or the final `mine plan start --format json` command with the plan owner and `expected_revision`. Proceed only after MINE returns `IN_PROGRESS`. Never edit either execution-graph file directly. For parallel lanes, MINE remains the serialized status owner and the plan's path ownership rules remain mandatory.
+
+For a parallel lane, obey its exclusive write paths and read-only dependencies exactly. Do not edit reserved shared files, even to register
+an import, CLI command, dependency, or fixture; record those needs as integration requests for the final integration plan. Never run two
+owners on the same lane or create a second implementation after a timeout—inspect and continue the existing diff.
+
+## Implement the plan
+
+Execute the plan steps in order unless the plan explicitly permits parallel order. Keep changes within its scope.
+
+1. Establish or run the plan's failing regression evidence before the fix when requested.
+2. Implement the smallest cohesive production change that satisfies the step and architecture.
+3. Add or update deterministic tests for the changed contract.
+4. Run the step's narrow verification before proceeding.
+5. Update documentation/configuration generated or owned by the changed interface.
+6. Re-read the plan checklist after each major step to prevent scope drift.
+
+Use the repository's managed toolchain and editing conventions. Preserve restricted data, generated artifacts, credentials, checkpoints, and
+user files according to `AGENTS.md` and the architecture. Never print, stage, commit, or copy secrets into reports.
+
+When the plan authorizes cleanup, operate on the actual current workspace so local leftovers are visible. Prefer moving uncertain user
+artifacts to the plan's ignored quarantine path over deleting them. Never use broad destructive commands such as `git clean -fdx`.
+
+Do not add compatibility aliases, migrations, or shims unless the plan or user explicitly requires them. Do not perform remote execution,
+uploads, submissions, deployments, or pushes unless the plan and user authorize that external mutation.
+
+## Commit implementation safely
+
+Follow the plan's suggested commit boundaries when they remain cohesive. Otherwise use a small number of Conventional Commits organized by
+concern.
+
+Before every commit:
+
+1. Inspect `git status --short` and `git diff`.
+2. Stage only explicit files belonging to the active plan.
+3. Inspect `git diff --cached --check`, `--stat`, and `--name-status`.
+4. Confirm no unrelated changes, restricted data, artifacts, models, archives, logs, or credentials are staged.
+5. Commit without rewriting previous shared history.
+
+In a parallel execution wave, staging and commit form a serialized critical section. If the index already contains files from another lane,
+do not commit, unstage, or alter them; wait for that owner. Confirm every cached path belongs to the current plan before committing.
+
+Do not push. Do not amend an earlier plan or another agent's commit.
+
+## Verify the completed implementation
+
+Run every verification command required by the plan. Also run the repository gates that apply to the affected scope:
+
+- focused tests, followed by the broader suite required by the plan;
+- the formatter, linter, static-analysis, and type-check gates defined for the affected scope by `AGENTS.md` and the architecture;
+- integration/smoke commands required by the plan;
+- `git diff --check` and a final staged-scope audit.
+
+Use exact commands from the managed environment. Never call a timeout, skip, missing dependency, non-zero exit, or unrun command a pass.
+Fix in-scope failures. Record unrelated or environmental failures precisely; do not weaken tests, typing, lint configuration, or acceptance
+thresholds merely to obtain green output.
+
+## Write the acceptance report
+
+Create the report path required by the plan under `docs/plan/reports/`. The implementation agent reports evidence but does not grant itself
+independent acceptance.
+
+Include:
+
+- plan path and execution date;
+- baseline commit/branch and implementation commits;
+- files/interfaces changed and why;
+- each plan step and acceptance item with evidence;
+- exact commands, exit status, and concise observed output;
+- skipped, failed, timed-out, or unavailable checks;
+- deviations from the plan and why they were necessary;
+- remaining risks, external actions, and user decisions;
+- current working-tree state and explicitly preserved unrelated changes.
+
+Set the implementation report conclusion to:
+
+- `IMPLEMENTED` when all implementation work and required verification are complete and committed, pending reviewer acceptance;
+- `IN_PROGRESS` when required in-scope work remains;
+- never `ACCEPTED` merely because the implementing agent wrote the report.
+
+`ACCEPTED` requires the reviewer process defined by `AGENTS.md`. After committing the implementation and report, call `mine_plan_mark_implemented` (or the final JSON CLI equivalent) with the report, commits, and expected revision. The reviewer later performs the accept/reject transition through MINE.
+Do not release downstream plans while the node is only `IMPLEMENTED`.
+
+Commit the report and, only when owned, final graph status using explicit paths. Parallel lane agents never stage the graph. Verify the resulting commit and confirm the assigned branch contains every implementation/report commit. For a non-parallel plan, no hidden merge step may remain. For a parallel lane, report the exact branch/worktree, commits, and declared join artifact required by the integration owner; do not merge it yourself unless the plan assigns integration ownership.
+
+## Finish with a self-contained handoff
+
+Report:
+
+- the plan executed and its final graph status;
+- the implementation and report commit hashes;
+- the important behavior/files changed;
+- verification commands and outcomes;
+- failures, skipped checks, remaining risks, and required reviewer/user actions;
+- unrelated working-tree changes preserved;
+- for non-parallel work, state that the work is already on the assigned branch with no hidden merge step; for a parallel lane, state the exact integration handoff and join artifact.
+
+Lead with the outcome. Do not claim the plan is accepted until the repository's reviewer has actually accepted it.

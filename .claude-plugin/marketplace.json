@@ -1,0 +1,22 @@
+{
+  "name": "mine-is-not-everyones",
+  "owner": {
+    "name": "BoChen SHEN"
+  },
+  "description": "MINE Is Not Everyone's.",
+  "plugins": [
+    {
+      "name": "mine",
+      "source": "./plugins/mine",
+      "description": "Architecture, executable planning, governed execution, and adversarial review for coding agents.",
+      "repository": "https://github.com/6ixGODD/mine-is-not-everyones",
+      "license": "MIT",
+      "category": "Developer Tools",
+      "tags": [
+        "architecture",
+        "planning",
+        "coding-agents"
+      ]
+    }
+  ]
+}

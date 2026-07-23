@@ -1,0 +1,116 @@
+# CLI Contract
+
+## Human-facing core
+
+Normal users should need only:
+
+```text
+mine init
+mine status
+mine doctor
+```
+
+All other commands are primarily invoked by Skills or advanced users.
+
+## Command groups
+
+```text
+mine init
+mine status
+mine doctor
+mine workspace open|status|close
+mine graph validate|render|status|ready|wave|show
+mine plan add|show|start|implemented|accept|reject
+mine design backup|validate|status
+mine repository version show|suggest|set
+mine agent config|install|uninstall|status
+mine dist sync|verify
+mine mcp serve
+```
+
+Final names may change during implementation. Skills and documentation are regenerated from the actual stable contract before release.
+
+## `mine init`
+
+`mine init`:
+
+- discovers repository root and stable branch;
+- initializes or validates `.mine/config.toml`;
+- creates a repository UUID when unmanaged;
+- creates `docs/design/` scaffold and `.mine-design.toml` when absent;
+- refuses unmarked or foreign-owned existing `docs/design/`;
+- creates MINE sections in `AGENTS.md` without erasing unrelated content;
+- configures supported agents when requested;
+- initializes repository version from existing MINE state, reliable root version evidence, or `0.1.0`;
+- performs no source scan, architecture generation, plan creation, agent invocation, business-code change, branch creation, commit, merge, or release.
+
+## Workspace commands
+
+`mine workspace open` creates the temporary `docs/plan/` workspace on the configured integration branch and generates an internal UUID. It takes no user-supplied release version.
+
+`mine workspace close` validates closure and may purge only the ownership-marked `docs/plan/` tree with explicit expected workspace identity. Version determination is separate.
+
+## Design backup
+
+`mine design backup` is the deterministic backup mechanism used by `mine-sync`.
+
+It:
+
+- validates the design marker and repository ownership;
+- creates `docs/design-backup-<UTC timestamp>/`;
+- copies managed design without following external links;
+- writes `*` to the backup root `.gitignore`;
+- verifies copy completion;
+- emits a structured manifest and backup path;
+- performs no design mutation.
+
+## Output modes
+
+- default: concise human-readable output;
+- `--format json`: stable machine-consumable envelope;
+- `--quiet`: suppress non-error human output where meaningful;
+- `--no-color`: deterministic plain text.
+
+## JSON output
+
+```json
+{
+  "ok": true,
+  "command": "plan.start",
+  "repository": "D:/work/project",
+  "workspace_id": "8dcd1df5-...",
+  "revision_before": 7,
+  "revision_after": 8,
+  "data": {},
+  "warnings": []
+}
+```
+
+Errors use the same envelope with `ok: false`, stable `error.code`, human message, and structured details.
+
+## Exit codes
+
+- `0`: success;
+- `2`: invalid invocation;
+- `3`: repository, branch, namespace, or workspace gate failure;
+- `4`: validation failure;
+- `5`: revision or lock conflict;
+- `6`: external dependency or Git evidence failure;
+- `7`: partial success requiring repair;
+- `1`: unexpected internal failure.
+
+Exact values become public contract when released.
+
+## Design validation
+
+`mine design validate` checks:
+
+- marker exists and repository ID matches;
+- `docs/design/index.md` exists;
+- every index link resolves;
+- child directories have indexes;
+- no duplicate document IDs;
+- plan anchors exist;
+- size thresholds produce warnings;
+- stable branch contains no `docs/plan/`;
+- no `docs/design-backup-*` path is tracked or staged for release.

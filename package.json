@@ -1,0 +1,24 @@
+{
+  "name": "mine-is-not-everyones",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MINE Is Not Everyone's — personal engineering governance for coding agents.",
+  "license": "MIT",
+  "keywords": [
+    "agent-skills",
+    "pi-package",
+    "claude-code",
+    "codex",
+    "opencode",
+    "architecture",
+    "planning"
+  ],
+  "pi": {
+    "skills": [
+      "./skills"
+    ]
+  },
+  "scripts": {
+    "verify": "python scripts/verify.py"
+  }
+}
