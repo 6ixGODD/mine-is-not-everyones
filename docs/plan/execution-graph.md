@@ -7,7 +7,7 @@
 - Workspace: `bootstrap-mine-v1`
 - Stable branch: `master`
 - Integration branch: `dev`
-- Revision: `19`
+- Revision: `20`
 
 | Plan | Title | Status | Hard predecessors |
 |---|---|---|---|
@@ -21,7 +21,7 @@
 | 07 | Four-agent installer, managed state, and doctor | BLOCKED | 06 |
 | 08 | Release, bootstrap, mine-sync, and self-hosting | BLOCKED | 07 |
 | 05-1 | MCP server official-SDK and scope correction (compensation for rejected Plan 05) | DRAFT | 03 |
-| 09 | Execution-graph compensation rewiring (CLI-managed) | READY | 03 |
+| 09 | Execution-graph compensation rewiring (CLI-managed) | IN_PROGRESS | 03 |
 
 ## Topology
 
