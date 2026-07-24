@@ -20,7 +20,7 @@ mine status
 mine doctor
 mine workspace open|status|close
 mine graph validate|render|status|ready|wave|show
-mine plan add|show|start|implemented|accept|reject|rewire-compensation
+mine plan add|show|start|implemented|accept|reject|release|rewire-compensation
 mine design backup|validate|status
 mine repository version show|suggest|set
 mine agent config|install|uninstall|status
@@ -100,6 +100,47 @@ Errors use the same envelope with `ok: false`, stable `error.code`, human messag
 - `1`: unexpected internal failure.
 
 Exact values become public contract when released.
+
+## Plan release
+
+`mine plan release --id <plan-id>` moves a newly registered plan from `DRAFT`
+into the startable frontier, deterministically. Registration (`mine plan add`)
+always creates a `DRAFT` node; release is the explicit gate between
+registration and execution. See
+`docs/design/execution-graph/state-machine-and-algorithms.md#plan-release`
+for the full algorithm.
+
+- Accepts only a `DRAFT` plan; returns `MINE_INVALID_TRANSITION` for any other
+  status and mutates nothing.
+- Transitions `DRAFT -> READY` when every hard predecessor is `ACCEPTED`
+  (including a plan with no hard predecessors); transitions `DRAFT -> BLOCKED`
+  when one or more hard predecessors are not yet `ACCEPTED`.
+- Never alters `IN_PROGRESS`/`IMPLEMENTED`/`ACCEPTED`/`REJECTED` plans.
+- Goes through the shared transaction (`lock -> reload -> revision check ->
+  semantic validation -> mutation -> atomic write -> deterministic render`);
+  every successful release increments the graph revision exactly once.
+- Not idempotent-success: re-running on an already-released node returns
+  `MINE_INVALID_TRANSITION` and writes nothing.
+
+```json
+{
+  "ok": true,
+  "command": "plan.release",
+  "revision_before": 18,
+  "revision_after": 19,
+  "data": {
+    "plan": "09",
+    "status_before": "DRAFT",
+    "status_after": "READY",
+    "hard_predecessors": ["03"],
+    "unsatisfied_predecessors": []
+  },
+  "warnings": []
+}
+```
+
+Errors reuse stable `MINE_*` codes (`MINE_PLAN_NOT_FOUND`,
+`MINE_INVALID_TRANSITION`, `MINE_REVISION_CONFLICT`, `MINE_LOCK_TIMEOUT`).
 
 ## Compensation rewiring
 

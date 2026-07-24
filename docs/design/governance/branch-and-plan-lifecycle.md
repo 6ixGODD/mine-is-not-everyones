@@ -90,6 +90,22 @@ rewiring is accepted into `dev` and the compensating plan is itself accepted.
 
 The workspace has a generated `workspace_id`; the user does not supply a workspace version. The workspace marker records repository ID, stable baseline commit, integration branch, creation time, and MINE ownership.
 
+## Registration and release
+
+`mine plan add` **registers** a plan as `DRAFT`: it records identity, design
+references, write paths, and dependencies, but makes no claim about whether
+the plan may execute. `mine plan release --id <plan-id>` is the explicit,
+deterministic gate that moves a `DRAFT` plan into the startable frontier
+(`READY` when all hard predecessors are `ACCEPTED`, otherwise `BLOCKED`). The
+distinction between registration and release is deliberate and must be
+preserved: a freshly added plan never becomes silently executable.
+
+Automatic successor release inside `mine plan accept` is unchanged: accepting
+a plan may release `BLOCKED` successors whose hard predecessors are all now
+accepted, in the same accept transaction. `mine plan release` covers the
+standalone case (a newly registered `DRAFT` plan with no pending accepted
+upstream), which the accept pass cannot reach.
+
 ## During development
 
 - Design changes precede plans.

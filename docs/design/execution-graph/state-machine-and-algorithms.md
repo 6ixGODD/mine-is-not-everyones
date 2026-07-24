@@ -16,9 +16,9 @@ REJECTED
 
 | From | To | Gate |
 |---|---|---|
-| DRAFT | BLOCKED | Plan registered but prerequisites or design gates unresolved |
-| DRAFT | READY | Plan complete and all hard predecessors accepted |
-| BLOCKED | READY | All blocking conditions resolved |
+| DRAFT | BLOCKED | Plan registered but one or more hard predecessors not yet accepted; `mine plan release` or automatic successor release inside `mine plan accept` |
+| DRAFT | READY | Plan complete and every hard predecessor accepted; `mine plan release` or automatic successor release inside `mine plan accept` |
+| BLOCKED | READY | All blocking conditions resolved (automatic successor release inside `mine plan accept`, or the blocker's own acceptance) |
 | READY | IN_PROGRESS | Successful start, owner assigned, revision matches |
 | IN_PROGRESS | IMPLEMENTED | Report and commit evidence registered |
 | IMPLEMENTED | ACCEPTED | Independent review passes every hard contract |
@@ -40,6 +40,83 @@ accepted CLI; neither changes the rejected plan's status:
    [Compensation rewiring](#compensation-rewiring) below).
 
 No generic `set-status` exists.
+
+## Plan release
+
+`mine plan release --id <plan-id>` is the explicit, deterministic operation
+that moves a newly registered plan from `DRAFT` into the startable frontier.
+Registration (`mine plan add`) always creates a `DRAFT` node by design: it
+records the plan's identity, design references, write paths, and dependencies
+but makes no claim about whether the plan may execute. Release is the
+separate, explicit gate between registration and execution. Preserving that
+distinction prevents a freshly added plan from becoming silently executable.
+
+### Anchors and inputs
+
+- The single input is the plan's id. No predecessor or status is supplied by
+  the caller; the operation reads the current node and its hard predecessors
+  under the graph lock.
+
+### Preconditions (all checked under the graph lock, atomically)
+
+1. The plan exists and its current status is exactly `DRAFT`. Any other
+   status (`BLOCKED`/`READY`/`IN_PROGRESS`/`IMPLEMENTED`/`ACCEPTED`/`REJECTED`)
+   fails with `MINE_INVALID_TRANSITION` and mutates nothing.
+2. The graph's current revision must match the caller-supplied expectation
+   (optimistic-concurrency), per the shared `save_with_revision` transaction.
+
+### Mutation
+
+- Compute `unsatisfied_predecessors` = the hard predecessors whose status is
+  not `ACCEPTED`, in stable predecessor-list order.
+- If `unsatisfied_predecessors` is empty (this includes a plan with no hard
+  predecessors), transition the node `DRAFT -> READY`.
+- Otherwise transition the node `DRAFT -> BLOCKED`.
+- Refresh the node's `updated_at`; no other node is touched. Persistence and
+  rendering are atomic via the shared `TomlStore::save_with_revision` path:
+  lock -> reload -> revision check -> semantic checks -> status transition ->
+  atomic TOML write -> deterministic Markdown render -> release lock. Every
+  successful release increments the graph revision exactly once.
+
+### Idempotency and re-run behavior
+
+Release is **not** idempotent-success: it accepts only `DRAFT`. Re-running on
+an already-released `READY` or `BLOCKED` node returns the precise stable error
+`MINE_INVALID_TRANSITION` (`status_before` is not `DRAFT`) and writes nothing,
+so callers cannot accidentally double-release. This is the documented
+idempotency choice; automation that may race should read `mine plan show`
+first or treat `MINE_INVALID_TRANSITION` as "already released".
+
+### Result
+
+The JSON envelope reports deterministically:
+
+- `command`: `"plan.release"`;
+- `revision_before` / `revision_after` (`revision_after == revision_before + 1`);
+- `data.plan`, `data.status_before` (`"DRAFT"`), `data.status_after`
+  (`"READY"` or `"BLOCKED"`), `data.hard_predecessors`, and
+  `data.unsatisfied_predecessors` (empty for `READY`).
+
+### Stability errors
+
+- `MINE_PLAN_NOT_FOUND`: plan id absent.
+- `MINE_INVALID_TRANSITION`: current status is not `DRAFT`.
+- `MINE_REVISION_CONFLICT` / `MINE_LOCK_TIMEOUT`: shared transactional checks.
+
+No arbitrary state-editing capability is introduced: release only moves a
+`DRAFT` node to `READY`/`BLOCKED` based on hard-predecessor acceptance, behind
+all validation above.
+
+### Relationship to automatic successor release
+
+`mine plan accept` keeps its existing automatic release pass: when a plan is
+accepted, any `BLOCKED` successor whose hard predecessors are all now
+accepted is moved to `READY` in the same transaction. That automatic pass and
+`mine plan release` are two gates over the same allowed `DRAFT/BLOCKED ->
+READY` edges; together they close the lifecycle gap where a standalone newly
+registered `DRAFT` plan (no accepted upstream) could not previously become
+executable. `mine plan release` never weakens `mine plan accept`'s release
+pass and never alters non-`DRAFT` nodes.
 
 ## Validation
 
