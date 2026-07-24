@@ -7,7 +7,7 @@
 - Workspace: `bootstrap-mine-v1`
 - Stable branch: `master`
 - Integration branch: `dev`
-- Revision: `29`
+- Revision: `32`
 
 | Plan | Title | Status | Hard predecessors |
 |---|---|---|---|
@@ -17,10 +17,10 @@
 | 03 | CLI, JSON, rendering, Git evidence, and workspace lifecycle | ACCEPTED | 02-1 |
 | 04 | Skills JSON-CLI, mine-sync, and design lifecycle | ACCEPTED | 03 |
 | 05 | stdio MCP server and typed tools | REJECTED | 03 |
-| 06 | Final Skill contract and plugin distribution | BLOCKED | 04, 05-1 |
+| 06 | Final Skill contract and plugin distribution | READY | 04, 05-1 |
 | 07 | Four-agent installer, managed state, and doctor | BLOCKED | 06 |
 | 08 | Release, bootstrap, mine-sync, and self-hosting | BLOCKED | 07 |
-| 05-1 | MCP server official-SDK and scope correction (compensation for rejected Plan 05) | READY | 03 |
+| 05-1 | MCP server official-SDK and scope correction (compensation for rejected Plan 05) | ACCEPTED | 03 |
 | 09 | Execution-graph compensation rewiring (CLI-managed) | REJECTED | 03 |
 | 09-1 | Plan release and compensation rewiring (compensation for rejected Plan 09) | ACCEPTED | 03 |
 

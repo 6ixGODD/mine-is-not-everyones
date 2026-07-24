@@ -16,14 +16,20 @@
 
 use serde_json::{Value, json};
 
+use crate::application::design_service::DesignService;
+use crate::application::graph_service::{
+    GraphService, PlanAcceptRequest, PlanAddRequest, PlanImplementedRequest, PlanRejectRequest,
+    PlanStartRequest,
+};
 use crate::application::init_service::InitService;
+use crate::application::plan_service::PlanService;
+use crate::application::plan_service::{PlanReleaseRequest, PlanRewireRequest};
 use crate::application::workspace_service::WorkspaceService;
 use crate::cli::context::{CommandContext, build_context, load_config_or_error};
 use crate::cli::{HandlerError, envelope_for};
 use crate::domain::error::{MineError, MineResult};
 use crate::domain::graph::{PlanNode, PlanWorkspace};
 use crate::domain::ports::Clock;
-use crate::domain::status::PlanStatus;
 use crate::domain::validation;
 use crate::infrastructure::design_backup::DesignBackup;
 use crate::infrastructure::git;
@@ -85,6 +91,10 @@ pub fn handle(
             _ => Err(HandlerError::usage(format!(
                 "unknown design subcommand {sub:?}"
             ))),
+        },
+        "mcp" => match sub {
+            "serve" => mcp_serve(parsed, rest),
+            _ => Err(HandlerError::usage("unknown mcp subcommand: serve")),
         },
         "repository" => match sub {
             "version" => repository_version(parsed, rest),
@@ -156,6 +166,31 @@ fn flags_all<'a>(flags: &'a [(String, String)], name: &str) -> Vec<&'a str> {
 
 fn ctx_err(e: MineError) -> HandlerError {
     HandlerError::from_mine(&e)
+}
+
+/// `mine mcp serve [--repo <path>]` — launches the stdio MCP server built on
+/// the official Rust MCP SDK (`rmcp`). The server reads MCP protocol messages
+/// from stdin and writes protocol responses to stdout; diagnostics go to
+/// stderr only. The CLI dispatcher never reaches `render` for this command, so
+/// no human/JSON CLI envelope contaminates protocol stdout.
+fn mcp_serve(parsed: &crate::cli::ParsedArgs, _rest: &[String]) -> HandlerResult {
+    let repo_root =
+        crate::cli::context::resolve_repo_root(parsed.global.repo.as_deref()).map_err(ctx_err)?;
+    // The rmcp-backed server runs its own stdio transport and only returns on
+    // EOF/shutdown; on error, surface a HandlerError (routed to stderr).
+    crate::mcp::serve(&repo_root).map_err(|e| HandlerError {
+        code: "MINE_INTERNAL",
+        message: e.to_string(),
+        exit_code: crate::output::exit_code::EXTERNAL,
+        details: Value::Null,
+    })?;
+    // On clean shutdown, return an empty success envelope (emitted to stderr
+    // by the dispatcher only when `--format json` was requested; stdout stays
+    // protocol-pure because the server never wrote a CLI envelope there).
+    let env = envelope_for("mcp.serve", Some(&repo_root)).with_data(json!({
+        "transport": "stdio",
+    }));
+    Ok((env, Vec::new()))
 }
 
 // ----------------------------------------------------------------------------
@@ -423,7 +458,9 @@ fn workspace_close(parsed: &crate::cli::ParsedArgs, _rest: &[String]) -> Handler
 
 fn graph_validate(parsed: &crate::cli::ParsedArgs, _rest: &[String]) -> HandlerResult {
     let ctx = build_context(&parsed.global).map_err(ctx_err)?;
-    let ws = ctx.store.load().map_err(ctx_err)?;
+    // Route through the shared GraphService (same path the MCP tool uses).
+    let svc = GraphService::new(&ctx.store);
+    let ws = svc.validate().map_err(ctx_err)?;
     // load() already validates; confirm revision-parity with the rendered
     // view if it exists.
     let mut warnings: Vec<Value> = Vec::new();
@@ -458,8 +495,9 @@ fn graph_validate(parsed: &crate::cli::ParsedArgs, _rest: &[String]) -> HandlerR
 
 fn graph_render(parsed: &crate::cli::ParsedArgs, _rest: &[String]) -> HandlerResult {
     let ctx = build_context(&parsed.global).map_err(ctx_err)?;
+    let svc = GraphService::new(&ctx.store);
     let rev_before = ctx.store.load().ok().map(|w| w.revision).unwrap_or(0);
-    ctx.store.render().map_err(ctx_err)?;
+    svc.render().map_err(ctx_err)?;
     let rev_after = ctx.store.load().map(|w| w.revision).unwrap_or(rev_before);
     let env = envelope_for("graph.render", Some(&ctx.repo_root))
         .with_revision(rev_before, rev_after)
@@ -476,19 +514,22 @@ fn graph_render(parsed: &crate::cli::ParsedArgs, _rest: &[String]) -> HandlerRes
 
 fn graph_status(parsed: &crate::cli::ParsedArgs, _rest: &[String]) -> HandlerResult {
     let ctx = build_context(&parsed.global).map_err(ctx_err)?;
-    let ws = ctx.store.load().map_err(ctx_err)?;
+    let svc = GraphService::new(&ctx.store);
+    let ws = svc.validate().map_err(ctx_err)?;
+    let st = svc.status().map_err(ctx_err)?;
     let env = envelope_for("graph.status", Some(&ctx.repo_root))
         .with_workspace_id(ws.workspace_id.clone())
-        .with_revision(ws.revision, ws.revision)
-        .with_data(graph_summary(&ws));
+        .with_revision(st.revision, st.revision)
+        .with_data(serde_json::to_value(&st).unwrap_or(Value::Null));
     let lines = human::status_report(&ctx.repo_root, Some(&ws));
     Ok((env, lines))
 }
 
 fn graph_ready(parsed: &crate::cli::ParsedArgs, _rest: &[String]) -> HandlerResult {
     let ctx = build_context(&parsed.global).map_err(ctx_err)?;
-    let ws = ctx.store.load().map_err(ctx_err)?;
-    let ready = validation::ready_frontier(&ws);
+    let svc = GraphService::new(&ctx.store);
+    let ready = svc.ready().map_err(ctx_err)?;
+    let ws = svc.validate().map_err(ctx_err)?;
     let env = envelope_for("graph.ready", Some(&ctx.repo_root))
         .with_workspace_id(ws.workspace_id.clone())
         .with_revision(ws.revision, ws.revision)
@@ -502,8 +543,9 @@ fn graph_ready(parsed: &crate::cli::ParsedArgs, _rest: &[String]) -> HandlerResu
 
 fn graph_wave(parsed: &crate::cli::ParsedArgs, _rest: &[String]) -> HandlerResult {
     let ctx = build_context(&parsed.global).map_err(ctx_err)?;
-    let ws = ctx.store.load().map_err(ctx_err)?;
-    let wave = validation::parallel_wave(&ws);
+    let svc = GraphService::new(&ctx.store);
+    let wave = svc.wave().map_err(ctx_err)?;
+    let ws = svc.validate().map_err(ctx_err)?;
     let env = envelope_for("graph.wave", Some(&ctx.repo_root))
         .with_workspace_id(ws.workspace_id.clone())
         .with_revision(ws.revision, ws.revision)
@@ -620,43 +662,21 @@ fn plan_add(parsed: &crate::cli::ParsedArgs, rest: &[String]) -> HandlerResult {
         .map(|s| s.to_string())
         .collect();
 
-    let expected = ctx.store.load().map_err(ctx_err)?.revision;
-    let id_for_env = id.clone();
-    let saved = save_with_revision(&ctx, expected, move |mut w| {
-        if w.get(&id).is_some() {
-            return Err(MineError::GraphInvalid {
-                detail: format!("plan id {id} already exists"),
-            });
-        }
-        // Validate path safety eagerly for a stable error.
-        crate::domain::path::normalize_repo_relative(&path)?;
-        let node = PlanNode {
+    // Route through the shared PlanService (same path the MCP tool uses).
+    let graph = GraphService::new(&ctx.store);
+    let svc = PlanService::new(&graph);
+    let saved = svc
+        .add(PlanAddRequest {
             id: id.clone(),
             path,
             title,
-            status: PlanStatus::Draft,
-            hard_predecessors: hard.clone(),
-            soft_predecessors: vec![],
-            design_references: design_refs.clone(),
-            exclusive_write_paths: writes.clone(),
-            read_only_paths: vec![],
-            reserved_shared_paths: vec![],
-            implementation_report: String::new(),
-            review_report: String::new(),
-            implementation_commits: vec![],
-            owner: String::new(),
-            run_id: String::new(),
-            started_at: String::new(),
-            updated_at: String::new(),
-            rejection_reason: String::new(),
-            compensating_plan: String::new(),
-        };
-        w.plans.push(node);
-        w.revision = expected + 1;
-        Ok(w)
-    })?;
-
-    let node = saved.get(&id_for_env).expect("just added");
+            design_references: design_refs,
+            exclusive_write_paths: writes,
+            hard_predecessors: hard,
+        })
+        .map_err(|e| map_partial(ctx_err(e), &ctx))?;
+    let expected = saved.revision - 1;
+    let node = saved.get(&id).expect("just added");
     let env = envelope_for("plan.add", Some(&ctx.repo_root))
         .with_workspace_id(saved.workspace_id.clone())
         .with_revision(expected, saved.revision)
@@ -672,16 +692,13 @@ fn plan_show(parsed: &crate::cli::ParsedArgs, rest: &[String]) -> HandlerResult 
     let ctx = build_context(&parsed.global).map_err(ctx_err)?;
     let (flags, _pos) = parse_flags(rest);
     let id = flag(&flags, "id").ok_or_else(|| HandlerError::usage("plan show requires --id"))?;
-    let ws = ctx.store.load().map_err(ctx_err)?;
-    let node = ws.get(id).ok_or_else(|| {
-        HandlerError::from_mine(&MineError::PlanNotFound {
-            plan_id: id.to_string(),
-        })
-    })?;
+    let graph = GraphService::new(&ctx.store);
+    let svc = PlanService::new(&graph);
+    let (revision, node) = svc.show(id).map_err(ctx_err)?;
     let env = envelope_for("plan.show", Some(&ctx.repo_root))
-        .with_workspace_id(ws.workspace_id.clone())
-        .with_revision(ws.revision, ws.revision)
-        .with_data(json!({"plan": node_json(node)}));
+        .with_workspace_id(graph.validate().map_err(ctx_err)?.workspace_id.clone())
+        .with_revision(revision, revision)
+        .with_data(json!({"plan": node_json(&node)}));
     let lines = vec![
         HumanLine::Field {
             key: "  id".to_string(),
@@ -712,60 +729,24 @@ fn plan_start(parsed: &crate::cli::ParsedArgs, rest: &[String]) -> HandlerResult
     let owner = flag(&flags, "owner").unwrap_or("default").to_string();
     let run_id = flag(&flags, "run-id").unwrap_or("default-run").to_string();
     let now = SystemClock.now_utc_rfc3339();
-
-    let expected = ctx.store.load().map_err(ctx_err)?.revision;
-    let id_for_closure = id.clone();
-    let id_for_env = id.clone();
-    let owner_for_closure = owner.clone();
-    let run_id_for_closure = run_id.clone();
-    let now_for_closure = now.clone();
-    let saved = save_with_revision(&ctx, expected, move |mut w| {
-        let current_status =
-            w.get(&id_for_closure)
-                .map(|n| n.status)
-                .ok_or_else(|| MineError::PlanNotFound {
-                    plan_id: id_for_closure.clone(),
-                })?;
-        if !matches!(current_status, PlanStatus::Ready) {
-            return Err(MineError::InvalidTransition {
-                plan_id: id_for_closure.clone(),
-                from: current_status.as_str().to_string(),
-                to: PlanStatus::InProgress.as_str().to_string(),
-            });
-        }
-        if !validation::hard_predecessors_accepted(&w, &id_for_closure)? {
-            let preds = w
-                .get(&id_for_closure)
-                .map(|n| n.hard_predecessors.clone())
-                .unwrap_or_default();
-            let unaccepted = preds
-                .into_iter()
-                .find(|p| w.get(p).is_some_and(|n| n.status != PlanStatus::Accepted))
-                .unwrap_or_default();
-            return Err(MineError::PredecessorNotAccepted {
-                plan_id: id_for_closure.clone(),
-                predecessor_id: unaccepted,
-                predecessor_status: "not accepted".to_string(),
-            });
-        }
-        let node = w.get_mut(&id_for_closure).expect("checked present above");
-        node.status
-            .validate_transition(&id_for_closure, PlanStatus::InProgress)?;
-        node.status = PlanStatus::InProgress;
-        node.owner = owner_for_closure;
-        node.run_id = run_id_for_closure;
-        node.started_at = now_for_closure.clone();
-        node.updated_at = now_for_closure;
-        w.revision = expected + 1;
-        Ok(w)
-    })?;
+    let graph = GraphService::new(&ctx.store);
+    let svc = PlanService::new(&graph);
+    let expected = graph.validate().map_err(ctx_err)?.revision;
+    let saved = svc
+        .start(PlanStartRequest {
+            id: id.clone(),
+            owner,
+            run_id,
+            started_at: now,
+        })
+        .map_err(|e| map_partial(ctx_err(e), &ctx))?;
     let env = envelope_for("plan.start", Some(&ctx.repo_root))
         .with_workspace_id(saved.workspace_id.clone())
         .with_revision(expected, saved.revision)
-        .with_data(json!({"plan": id_for_env}));
+        .with_data(json!({"plan": id}));
     let lines = vec![HumanLine::Field {
         key: "  started".to_string(),
-        value: id_for_env,
+        value: id,
     }];
     Ok((env, lines))
 }
@@ -789,29 +770,24 @@ fn plan_implemented(parsed: &crate::cli::ParsedArgs, rest: &[String]) -> Handler
         ));
     }
     let now = SystemClock.now_utc_rfc3339();
-    let expected = ctx.store.load().map_err(ctx_err)?.revision;
-    let id_for_env = id.clone();
-    let commits_for_env = commits.clone();
-    let saved = save_with_revision(&ctx, expected, move |mut w| {
-        let node = w.get_mut(&id).ok_or_else(|| MineError::PlanNotFound {
-            plan_id: id.clone(),
-        })?;
-        node.status
-            .validate_transition(&id, PlanStatus::Implemented)?;
-        node.status = PlanStatus::Implemented;
-        node.implementation_report = report.clone();
-        node.implementation_commits = commits.clone();
-        node.updated_at = now.clone();
-        w.revision = expected + 1;
-        Ok(w)
-    })?;
+    let graph = GraphService::new(&ctx.store);
+    let svc = PlanService::new(&graph);
+    let expected = graph.validate().map_err(ctx_err)?.revision;
+    let saved = svc
+        .mark_implemented(PlanImplementedRequest {
+            id: id.clone(),
+            report,
+            commits: commits.clone(),
+            updated_at: now,
+        })
+        .map_err(|e| map_partial(ctx_err(e), &ctx))?;
     let env = envelope_for("plan.implemented", Some(&ctx.repo_root))
         .with_workspace_id(saved.workspace_id.clone())
         .with_revision(expected, saved.revision)
-        .with_data(json!({"plan": id_for_env, "commits": commits_for_env}));
+        .with_data(json!({"plan": id, "commits": commits}));
     let lines = vec![HumanLine::Field {
         key: "  implemented".to_string(),
-        value: id_for_env,
+        value: id,
     }];
     Ok((env, lines))
 }
@@ -829,61 +805,23 @@ fn plan_accept(parsed: &crate::cli::ParsedArgs, rest: &[String]) -> HandlerResul
         ));
     }
     let now = SystemClock.now_utc_rfc3339();
-    let expected = ctx.store.load().map_err(ctx_err)?.revision;
-    let id_for_env = id.clone();
-    let saved = save_with_revision(&ctx, expected, move |mut w| {
-        let current = w
-            .get(&id)
-            .map(|n| n.status)
-            .ok_or_else(|| MineError::PlanNotFound {
-                plan_id: id.clone(),
-            })?;
-        if !matches!(current, PlanStatus::Implemented) {
-            return Err(MineError::InvalidTransition {
-                plan_id: id.clone(),
-                from: current.as_str().to_string(),
-                to: PlanStatus::Accepted.as_str().to_string(),
-            });
-        }
-        PlanStatus::Implemented.validate_transition(&id, PlanStatus::Accepted)?;
-        // Mark the target as accepted first, then release newly-ready
-        // successors whose hard predecessors are all now accepted.
-        let accepted_ancestors: std::collections::HashSet<String> = w
-            .plans
-            .iter()
-            .filter(|p| p.status == PlanStatus::Accepted)
-            .map(|p| p.id.clone())
-            .collect();
-        let target_is_only_ancestor_gate = w
-            .get(&id)
-            .map(|n| n.hard_predecessors.clone())
-            .unwrap_or_default();
-        for p in w.plans.iter_mut() {
-            if p.status == PlanStatus::Blocked
-                && !p.hard_predecessors.is_empty()
-                && p.hard_predecessors
-                    .iter()
-                    .all(|hp| accepted_ancestors.contains(hp) || hp == &id)
-            {
-                p.status = PlanStatus::Ready;
-                p.updated_at = now.clone();
-            }
-        }
-        let _ = target_is_only_ancestor_gate;
-        let node = w.get_mut(&id).expect("checked present above");
-        node.status = PlanStatus::Accepted;
-        node.review_report = review.clone();
-        node.updated_at = now.clone();
-        w.revision = expected + 1;
-        Ok(w)
-    })?;
+    let graph = GraphService::new(&ctx.store);
+    let svc = PlanService::new(&graph);
+    let expected = graph.validate().map_err(ctx_err)?.revision;
+    let saved = svc
+        .accept(PlanAcceptRequest {
+            id: id.clone(),
+            review_report: review,
+            updated_at: now,
+        })
+        .map_err(|e| map_partial(ctx_err(e), &ctx))?;
     let env = envelope_for("plan.accept", Some(&ctx.repo_root))
         .with_workspace_id(saved.workspace_id.clone())
         .with_revision(expected, saved.revision)
-        .with_data(json!({"plan": id_for_env}));
+        .with_data(json!({"plan": id}));
     let lines = vec![HumanLine::Field {
         key: "  accepted".to_string(),
-        value: id_for_env,
+        value: id,
     }];
     Ok((env, lines))
 }
@@ -904,43 +842,31 @@ fn plan_reject(parsed: &crate::cli::ParsedArgs, rest: &[String]) -> HandlerResul
         ));
     }
     let now = SystemClock.now_utc_rfc3339();
-    let expected = ctx.store.load().map_err(ctx_err)?.revision;
-    let id_for_env = id.clone();
-    let compensating_for_env = compensating.clone();
-    let saved = save_with_revision(&ctx, expected, move |mut w| {
-        let node = w.get_mut(&id).ok_or_else(|| MineError::PlanNotFound {
-            plan_id: id.clone(),
-        })?;
-        node.status.validate_transition(&id, PlanStatus::Rejected)?;
-        node.status = PlanStatus::Rejected;
-        node.rejection_reason = reason.clone();
-        node.compensating_plan = compensating.clone();
-        node.updated_at = now.clone();
-        // Downstream rerouting is the reviewer's responsibility; we leave
-        // successor predecessor edges to a `plan add` of the compensation node
-        // (kept bounded).
-        w.revision = expected + 1;
-        Ok(w)
-    })?;
+    let graph = GraphService::new(&ctx.store);
+    let svc = PlanService::new(&graph);
+    let expected = graph.validate().map_err(ctx_err)?.revision;
+    let saved = svc
+        .reject(PlanRejectRequest {
+            id: id.clone(),
+            reason,
+            compensating_plan: compensating.clone(),
+            updated_at: now,
+        })
+        .map_err(|e| map_partial(ctx_err(e), &ctx))?;
     let env = envelope_for("plan.reject", Some(&ctx.repo_root))
         .with_workspace_id(saved.workspace_id.clone())
         .with_revision(expected, saved.revision)
-        .with_data(json!({"plan": id_for_env, "compensating_plan": compensating_for_env}));
+        .with_data(json!({"plan": id, "compensating_plan": compensating}));
     let lines = vec![HumanLine::Field {
         key: "  rejected".to_string(),
-        value: id_for_env,
+        value: id,
     }];
     Ok((env, lines))
 }
 
-// ----------------------------------------------------------------------------
-// plan release and compensation rewiring
-// ----------------------------------------------------------------------------
-
 /// `mine plan release --id <id>`: the explicit gate that moves a DRAFT plan
-/// into the startable frontier (READY when every hard predecessor is
-/// ACCEPTED, else BLOCKED). See
-/// `docs/design/execution-graph/state-machine-and-algorithms.md#plan-release`.
+/// to the startable frontier, routed through the shared `PlanService` (the
+/// same path the MCP `mine_plan_release` tool uses).
 fn plan_release(parsed: &crate::cli::ParsedArgs, rest: &[String]) -> HandlerResult {
     let ctx = build_context(&parsed.global).map_err(ctx_err)?;
     let (flags, _pos) = parse_flags(rest);
@@ -948,34 +874,25 @@ fn plan_release(parsed: &crate::cli::ParsedArgs, rest: &[String]) -> HandlerResu
         .ok_or_else(|| HandlerError::usage("plan release requires --id"))?
         .to_string();
     let now = SystemClock.now_utc_rfc3339();
-
-    let expected = ctx.store.load().map_err(ctx_err)?.revision;
-    let id_for_env = id.clone();
-    let saved = save_with_revision(&ctx, expected, move |mut w| {
-        let before = w
-            .get(&id)
-            .map(|n| n.status)
-            .ok_or_else(|| MineError::PlanNotFound {
-                plan_id: id.clone(),
-            })?;
-        crate::domain::plan_release::release_plan(&mut w, &id, &now)?;
-        // release always transitions DRAFT -> READY|BLOCKED on success, so the
-        // revision always bumps exactly once.
-        let _ = before;
-        w.revision = expected + 1;
-        Ok(w)
-    })?;
-
-    let node = saved.get(&id_for_env).expect("present in saved ws");
+    let graph = GraphService::new(&ctx.store);
+    let svc = PlanService::new(&graph);
+    let expected = graph.validate().map_err(ctx_err)?.revision;
+    let saved = svc
+        .release(PlanReleaseRequest {
+            id: id.clone(),
+            updated_at: now,
+        })
+        .map_err(|e| map_partial(ctx_err(e), &ctx))?;
+    let node = saved.get(&id).expect("present in saved ws");
     let status_after = node.status;
     let hard = node.hard_predecessors.clone();
-    let unsatisfied = crate::domain::plan_release::unsatisfied_predecessors(&saved, &id_for_env)
-        .unwrap_or_default();
+    let unsatisfied =
+        crate::domain::plan_release::unsatisfied_predecessors(&saved, &id).unwrap_or_default();
     let env = envelope_for("plan.release", Some(&ctx.repo_root))
         .with_workspace_id(saved.workspace_id.clone())
         .with_revision(expected, saved.revision)
         .with_data(json!({
-            "plan": id_for_env,
+            "plan": id,
             "status_before": "DRAFT",
             "status_after": status_after.as_str(),
             "hard_predecessors": hard,
@@ -983,14 +900,15 @@ fn plan_release(parsed: &crate::cli::ParsedArgs, rest: &[String]) -> HandlerResu
         }));
     let lines = vec![HumanLine::Field {
         key: "  released".to_string(),
-        value: format!("{} -> {}", id_for_env, status_after.as_str()),
+        value: format!("{id} -> {}", status_after.as_str()),
     }];
     Ok((env, lines))
 }
 
 /// `mine plan rewire-compensation --id <rejected-id>`: reroutes a rejected
-/// plan's downstream dependencies onto its registered compensating plan. See
-/// `docs/design/execution-graph/state-machine-and-algorithms.md#compensation-rewiring`.
+/// plan's downstream successors onto its registered compensating plan, routed
+/// through the shared `PlanService` (the same path the MCP
+/// `mine_plan_rewire_compensation` tool uses).
 fn plan_rewire_compensation(parsed: &crate::cli::ParsedArgs, rest: &[String]) -> HandlerResult {
     let ctx = build_context(&parsed.global).map_err(ctx_err)?;
     let (flags, _pos) = parse_flags(rest);
@@ -998,42 +916,30 @@ fn plan_rewire_compensation(parsed: &crate::cli::ParsedArgs, rest: &[String]) ->
         .ok_or_else(|| HandlerError::usage("plan rewire-compensation requires --id"))?
         .to_string();
     let now = SystemClock.now_utc_rfc3339();
-
-    let expected = ctx.store.load().map_err(ctx_err)?.revision;
-    let id_for_env = id.clone();
-    // Thread the affected-successor list and the compensating id out of the
-    // transaction closure for the result envelope.
-    let affected_cell = std::cell::RefCell::new(Vec::<String>::new());
-    let comp_cell = std::cell::RefCell::new(String::new());
-    let saved = save_with_revision(&ctx, expected, |mut w| {
-        let rejected = w.get(&id).ok_or_else(|| MineError::PlanNotFound {
-            plan_id: id.clone(),
-        })?;
-        let comp = rejected.compensating_plan.clone();
-        let affected = crate::domain::rewire::rewire_compensation(&mut w, &id, &now)?;
-        // Bump revision only on a real mutation; on the idempotent no-op path
-        // (affected empty) the workspace is unchanged and the store rewrites
-        // byte-identical TOML/MD with revision unchanged.
-        if !affected.is_empty() {
-            w.revision = expected + 1;
-        }
-        *affected_cell.borrow_mut() = affected;
-        *comp_cell.borrow_mut() = comp;
-        Ok(w)
-    })?;
-    let affected = affected_cell.into_inner();
-    let comp = comp_cell.into_inner();
+    let graph = GraphService::new(&ctx.store);
+    let svc = PlanService::new(&graph);
+    let expected = graph.validate().map_err(ctx_err)?.revision;
+    let (saved, affected) = svc
+        .rewire_compensation(PlanRewireRequest {
+            id: id.clone(),
+            updated_at: now,
+        })
+        .map_err(|e| map_partial(ctx_err(e), &ctx))?;
+    let comp = saved
+        .get(&id)
+        .map(|n| n.compensating_plan.clone())
+        .unwrap_or_default();
     let env = envelope_for("plan.rewire-compensation", Some(&ctx.repo_root))
         .with_workspace_id(saved.workspace_id.clone())
         .with_revision(expected, saved.revision)
         .with_data(json!({
-            "rejected_plan": id_for_env,
+            "rejected_plan": id,
             "compensating_plan": comp,
             "affected_successors": affected,
         }));
     let lines = vec![HumanLine::Field {
         key: "  rewired".to_string(),
-        value: format!("{} -> {} (affected: {})", id_for_env, comp, affected.len()),
+        value: format!("{id} -> {comp} (affected: {})", affected.len()),
     }];
     Ok((env, lines))
 }
@@ -1070,44 +976,13 @@ fn design_backup(parsed: &crate::cli::ParsedArgs, _rest: &[String]) -> HandlerRe
 fn design_validate(parsed: &crate::cli::ParsedArgs, _rest: &[String]) -> HandlerResult {
     let ctx = build_context(&parsed.global).map_err(ctx_err)?;
     let config = load_config_or_error(&ctx.repo_root).map_err(ctx_err)?;
-    let mut warnings: Vec<Value> = Vec::new();
-    let marker_path = ctx.repo_root.join(&config.design.marker);
-    let marker_ok = marker_path.exists();
-    let index_ok = ctx.repo_root.join("docs/design/index.md").exists();
-    let mut ok = true;
-    if !marker_ok {
-        ok = false;
-    }
-    if !index_ok {
-        warnings.push(
-            json!({"code":"MINE_DESIGN_INDEX_MISSING","message":"docs/design/index.md missing"}),
-        );
-        ok = false;
-    }
-    // Stable branch must not contain docs/plan/ (read-only Git evidence: no
-    // tracking check here, but flag presence under git as a warning).
-    if git::current_branch(&ctx.repo_root)
-        .ok()
-        .flatten()
-        .as_deref()
-        == Some(config.branches.stable.as_str())
-        && ctx
-            .repo_root
-            .join("docs/plan")
-            .join("execution-graph.toml")
-            .exists()
-    {
-        warnings.push(
-            json!({"code":"MINE_PLANS_ON_STABLE","message":"docs/plan found on the stable branch"}),
-        );
-    }
-    let env = envelope_for("design.validate", Some(&ctx.repo_root)).with_data(json!({
-        "valid": ok,
-        "warnings": warnings,
-    }));
+    // Route through the shared DesignService (same path the MCP tool uses).
+    let result = DesignService::validate(&ctx.repo_root, &config).map_err(ctx_err)?;
+    let env = envelope_for("design.validate", Some(&ctx.repo_root))
+        .with_data(serde_json::to_value(&result).unwrap_or(Value::Null));
     let lines = vec![HumanLine::Field {
         key: "  valid".to_string(),
-        value: ok.to_string(),
+        value: result.valid.to_string(),
     }];
     Ok((env, lines))
 }
@@ -1115,29 +990,17 @@ fn design_validate(parsed: &crate::cli::ParsedArgs, _rest: &[String]) -> Handler
 fn design_status(parsed: &crate::cli::ParsedArgs, _rest: &[String]) -> HandlerResult {
     let ctx = build_context(&parsed.global).map_err(ctx_err)?;
     let config = load_config_or_error(&ctx.repo_root).map_err(ctx_err)?;
-    let marker_path = ctx.repo_root.join(&config.design.marker);
-    let marker = marker_path
-        .exists()
-        .then(|| {
-            std::fs::read_to_string(&marker_path).ok().and_then(|c| {
-                crate::domain::design_marker::DesignMarker::parse(&marker_path, &c).ok()
-            })
-        })
-        .flatten();
-    let env = envelope_for("design.status", Some(&ctx.repo_root)).with_data(json!({
-        "managed": marker.is_some(),
-        "repository_id": marker.as_ref().map(|m| m.repository_id.clone()),
-        "created_at": marker.as_ref().map(|m| m.created_at.clone()),
-        "design_root": config.design.root,
-    }));
+    let status = DesignService::status(&ctx.repo_root, &config).map_err(ctx_err)?;
+    let env = envelope_for("design.status", Some(&ctx.repo_root))
+        .with_data(serde_json::to_value(&status).unwrap_or(Value::Null));
     let lines = vec![
         HumanLine::Field {
             key: "  managed".to_string(),
-            value: marker.is_some().to_string(),
+            value: status.managed.to_string(),
         },
         HumanLine::Field {
             key: "  design_root".to_string(),
-            value: config.design.root,
+            value: status.design_root,
         },
     ];
     Ok((env, lines))
@@ -1252,23 +1115,32 @@ fn is_valid_semver(v: &str) -> bool {
 // persistent mutation helper
 // ----------------------------------------------------------------------------
 
-/// Wraps [`TomlStore::save_with_revision`] with a uniform error mapping that
-/// surfaces partial-success render failures as exit code 7 (PARTIAL) rather
-/// than 4, per the exit-code contract ("partial success requiring repair").
-fn save_with_revision(
-    ctx: &CommandContext,
-    expected: u64,
-    mutate: impl FnOnce(PlanWorkspace) -> MineResult<PlanWorkspace>,
-) -> Result<PlanWorkspace, HandlerError> {
-    match ctx.store.save_with_revision(expected, mutate) {
-        Ok(ws) => Ok(ws),
-        Err(MineError::GraphInvalid { detail }) if detail.contains("render") => Err(HandlerError {
+/// Maps a service error to a [`HandlerError`], elevating partial-success
+/// render failures (surfaced by the store as `GraphInvalid` with a `render`
+/// hint) to exit code 7 (PARTIAL) per the exit-code contract. Other errors keep
+/// their domain-derived exit code. Shared by the CLI and MCP adapters (the MCP
+/// adapter uses the same partial-success mapping).
+fn map_partial(err: HandlerError, _ctx: &CommandContext) -> HandlerError {
+    let HandlerError {
+        code,
+        message,
+        exit_code,
+        details,
+    } = err;
+    if code == "MINE_GRAPH_INVALID" && message.contains("render") {
+        HandlerError {
             code: "MINE_GRAPH_RENDER_PARTIAL",
-            message: detail,
+            message,
             exit_code: crate::output::exit_code::PARTIAL,
-            details: Value::Null,
-        }),
-        Err(e) => Err(ctx_err(e)),
+            details,
+        }
+    } else {
+        HandlerError {
+            code,
+            message,
+            exit_code,
+            details,
+        }
     }
 }
 
