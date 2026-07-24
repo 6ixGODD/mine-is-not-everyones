@@ -1,402 +1,485 @@
-# Plan 09: Execution-graph compensation rewiring (CLI-managed)
+# Plan 09: Plan release and compensation rewiring (CLI-managed)
 
 ## Status
-`DRAFT` (to be released to `READY` by `mine plan add` on registration; hard predecessor `03` is `ACCEPTED`).
+`DRAFT` — to become `READY` via the one-time break-glass exception recorded
+in this plan (see [Break-glass exception](#break-glass-exception)), then
+started via `mine plan start`. Hard predecessor `03` is `ACCEPTED`.
 
 ## Goal
 
-Add a first-class, deterministic, CLI-managed operation that reroutes a
-rejected plan's downstream dependencies onto its **registered compensating
-plan**, through the accepted application/persistence path. This closes the
-execution-graph lifecycle gap exposed when Plan 05 was rejected and its
-compensating Plan 05-1 was registered: the accepted CLI had no supported
-operation to replace a rejected predecessor with its compensating plan, so
-downstream Plan 06 still names `05` even though it should now depend on
-`05-1`. The bootstrap-era manual reroute (Plan `02` -> `02-1`) cannot be
-reproduced because the bootstrap exception has ended and manual editing of
-`docs/plan/execution-graph.{toml,md}` is prohibited.
+Add two first-class, deterministic, CLI-managed operations that close
+related execution-graph lifecycle gaps the accepted workflow cannot currently
+perform:
+
+1. **`mine plan release --id <id>`** — the explicit gate that moves a newly
+   registered `DRAFT` plan into the startable frontier (`READY` when every
+   hard predecessor is `ACCEPTED`, otherwise `BLOCKED`). `mine plan add`
+   registers plans as `DRAFT`; `mine plan start` requires `READY`; automatic
+   successor release happens only inside `mine plan accept`; so a standalone
+   newly added `DRAFT` plan (no accepted upstream that triggers an accept
+   pass) can never enter execution. This plan and the existing Plan 09 cannot
+   even be started without this capability.
+2. **`mine plan rewire-compensation --id <rejected-id>`** — reroutes a
+   rejected plan's downstream dependencies onto its **registered compensating
+   plan**, through the accepted application/persistence path. Closes the gap
+   exposed when Plan 05 was rejected and 05-1 registered: the accepted CLI
+   had no operation to replace a rejected predecessor with its compensating
+   plan, so downstream Plan 06 still names `05`.
+
+Both operations go through the shared application/persistence transaction
+(`lock -> reload -> revision check -> semantic validation -> mutation ->
+atomic persistence -> deterministic render`). Neither introduces an arbitrary
+graph-editing API. Manual editing of `docs/plan/execution-graph.{toml,md}` is
+prohibited (the bootstrap exception has ended), except for the single one-time
+break-glass mutation recorded below that makes Plan 09 itself startable.
 
 ## User-visible outcome
 
 After this plan is accepted and merged into `dev`, an authorized reviewer can
-run, exactly once:
+close the Plan 05 rejection and resume implementation of Plan 05-1:
 
 ```
-mine plan rewire-compensation --id 05 --format json
+mine plan rewire-compensation --id 05 --format json   # 06: hard preds 05 -> 05-1
+mine plan release --id 05-1 --format json             # 05-1: DRAFT -> READY
+mine plan start --id 05-1 --owner <owner> --run-id <run> --format json
 ```
 
-which atomically rewrites downstream successors' hard/soft predecessor entries
-from `05` to `05-1` (derived from `05`'s `compensating_plan`), bumps the graph
-revision, regenerates the Markdown view, and reports the affected successors.
-Only after that rewiring is merged does Plan 05-1 implementation resume.
+The first rewrites downstream successors' exact predecessor entries from
+`05` to `05-1` (derived from `05`'s `compensating_plan`), regenerates the
+Markdown view, and bumps the graph revision. The second moves 05-1 to `READY`
+(hard predecessor `03` is `ACCEPTED`). The third begins 05-1 implementation.
+Each reads the authoritative current revision immediately before mutating.
 
-Until this command exists and is accepted, no agent may hand-edit the graph to
-repair the `05` -> `05-1` dependency.
+Until these commands exist and are accepted, no agent may hand-edit the graph
+to repair dependencies or release plans.
 
 ## Governing design references
 
-- `docs/design/execution-graph/state-machine-and-algorithms.md#compensation-rewiring` (the algorithm, preconditions, idempotency, result — authoritative)
-- `docs/design/execution-graph/state-machine-and-algorithms.md#allowed-transitions` (REJECTED is terminal; no REJECTED -> BLOCKED)
+- `docs/design/execution-graph/state-machine-and-algorithms.md#plan-release` (release algorithm, preconditions, idempotency, result — authoritative)
+- `docs/design/execution-graph/state-machine-and-algorithms.md#compensation-rewiring` (rewiring algorithm, preconditions, idempotency, result — authoritative)
+- `docs/design/execution-graph/state-machine-and-algorithms.md#allowed-transitions` (REJECTED is terminal; DRAFT/BLOCKED -> READY gates)
 - `docs/design/execution-graph/domain-model.md` (the `compensating_plan` field as single source of truth for rewiring)
-- `docs/design/execution-graph/persistence-and-concurrency.md#revision-and-locking` (the lock -> reload -> recheck -> atomic write -> render transaction this operation reuses)
-- `docs/design/interfaces/cli-contract.md#compensation-rewiring` (CLI command group, result envelope, error codes)
-- `docs/design/governance/branch-and-plan-lifecycle.md#compensation-and-downstream-rewiring` (governance policy: register compensating plan, then rewire; rejected is terminal; accepted/active successors never rewritten)
+- `docs/design/execution-graph/persistence-and-concurrency.md#revision-and-locking` (the transaction both operations reuse)
+- `docs/design/interfaces/cli-contract.md#plan-release` (CLI command + result envelope)
+- `docs/design/interfaces/cli-contract.md#compensation-rewiring` (CLI command + result envelope)
+- `docs/design/governance/branch-and-plan-lifecycle.md#registration-and-release` (registration vs release distinction)
+- `docs/design/governance/branch-and-plan-lifecycle.md#compensation-and-downstream-rewiring` (governance policy)
 - `docs/design/system/component-architecture.md` (domain = pure rules; CLI adapter wires domain into the persistence transaction; no second implementation)
 
 ## Requirements traceability
 
+### Plan release
+
 | Requirement | Design leaf/anchor | Work package | Acceptance evidence |
 |---|---|---|---|
-| 1. Rejected plan superseded only by explicitly registered compensating plan | domain-model.md `compensating_plan`; state-machine #compensation-rewiring inputs | WP1 | Domain fn rejects any rewire whose replacement is not the rejected plan's `compensating_plan` |
-| 2. Lock -> reload -> revision -> semantic -> mutate -> atomic persist -> render | persistence-and-concurrency #revision-and-locking | WP3 | Handler routes through `TomlStore::save_with_revision`; tests assert revision bump + MD regen atomically |
-| 3. Never silently rewrite on similar id | state-machine #compensation-rewiring inputs | WP1, WP3 | Exact-id equality only; fuzz test with sibling id `05` vs `050` is not rewired |
-| 4a. Original is REJECTED | state-machine #compensation-rewiring preconditions | WP1 | Non-REJECTED original -> `MINE_INVALID_TRANSITION` test |
-| 4b. `compensating_plan` matches replacement | #compensation-rewiring inputs | WP1 | Replacement is derived, never caller-supplied; empty `compensating_plan` -> `MINE_GRAPH_INVALID` test |
-| 4c. Replacement exists | #compensation-rewiring preconditions | WP1 | Missing replacement -> `MINE_PLAN_NOT_FOUND` test |
-| 4d. Affected successors not IN_PROGRESS/IMPLEMENTED/ACCEPTED/REJECTED | #compensation-rewiring preconditions | WP1 | Locked-successor test -> `MINE_REWIRE_SUCCESSOR_LOCKED`, nothing written |
-| 4e. No cycle introduced | #compensation-rewiring preconditions (reuses `topological_sort`) | WP1 | Cycle test -> `MINE_GRAPH_CYCLE`, nothing written |
-| 4f. Unrelated predecessors/successors unchanged | #compensation-rewiring mutation | WP1 | Diff test: only the exact rejected-id occurrences change, order preserved |
-| 5. Graph mutation + Markdown rendering atomic to caller | persistence-and-concurrency #revision-and-locking | WP3 | Idempotent-no-op writes nothing; failed validation leaves bytes unchanged (md5) |
-| 6. Deterministic JSON result | cli-contract #compensation-rewiring result envelope | WP3 | Golden JSON envelope test |
-| 7. Idempotency decision documented | state-machine #compensation-rewiring idempotency | Design (done), WP3 | Re-run test: `revision_before == revision_after`, `affected_successors: []` |
-| 8. No arbitrary graph-editing API | cli-contract (only `rewire-compensation` added) | WP3 | No generic `set_predecessors`/`edit_graph` symbol introduced (grep gate) |
-| 9. Do not weaken immutability of accepted/active plans | state-machine #compensation-rewiring preconditions | WP1 | Accepted/IN_PROGRESS/IMPLEMENTED/REJECTED successors never mutated (test) |
+| R1. Accepts only a DRAFT plan | state-machine #plan-release preconditions | WP1, WP3 | Non-DRAFT plan -> `MINE_INVALID_TRANSITION`, nothing written |
+| R2. DRAFT -> READY when every hard pred ACCEPTED | #plan-release mutation | WP1 | Successor-of-accepted test |
+| R3. DRAFT -> BLOCKED when one+ hard preds not ACCEPTED | #plan-release mutation | WP1 | Pred `BLOCKED` test -> BLOCKED, unsatisfied reported |
+| R4. DRAFT with no hard preds -> READY | #plan-release mutation | WP1 | No-preds test |
+| R5. Reports unsatisfied predecessors deterministically | #plan-release result | WP3 | result `data.unsatisfied_predecessors` in stable order |
+| R6. Never alters IN_PROGRESS/IMPLEMENTED/ACCEPTED/REJECTED | #plan-release preconditions | WP1 | Non-DRAFT statuses -> error, byte-unchanged |
+| R7. No arbitrary state-editing capability | cli-contract #plan-release | WP3 | No generic `set_status`/`edit_plan` symbol (grep gate) |
+| R8. Shared persistence path; revision +1 exactly once on success | persistence #revision-and-locking | WP3 | `revision_after == revision_before + 1` on every real release |
+| R9. Deterministic JSON result (plan, status_before, status_after, hard_predecessors, unsatisfied_predecessors, revisions) | cli-contract #plan-release | WP3 | Golden JSON envelope test |
+
+### Compensation rewiring
+
+| Requirement | Design leaf/anchor | Work package | Acceptance evidence |
+|---|---|---|---|
+| C1. Superseded only by explicitly registered compensating plan | domain-model `compensating_plan`; #compensation-rewiring inputs | WP1, WP3 | Replacement derived from `compensating_plan`; caller never supplies it |
+| C2. Shared persistence path | persistence #revision-and-locking | WP3 | `save_with_revision`; atomic TOML+MD |
+| C3. Never silently rewrite on similar id | #compensation-rewiring inputs | WP1, WP3 | Sibling-id `050` not rewired when rewiring `05` |
+| C4a. Original is REJECTED | #compensation-rewiring preconditions | WP1 | Non-REJECTED -> `MINE_INVALID_TRANSITION` |
+| C4b. `compensating_plan` matches replacement | #compensation-rewiring inputs | WP1 | Empty -> `MINE_GRAPH_INVALID` |
+| C4c. Replacement exists | #compensation-rewiring preconditions | WP1 | Missing -> `MINE_PLAN_NOT_FOUND` |
+| C4d. Affected successors not IN_PROGRESS/IMPLEMENTED/ACCEPTED/REJECTED | #compensation-rewiring preconditions | WP1 | Locked successor -> `MINE_REWIRE_SUCCESSOR_LOCKED`, nothing written |
+| C4e. No cycle introduced | #compensation-rewiring preconditions | WP1 | Cycle -> `MINE_GRAPH_CYCLE` |
+| C4f. Unrelated preds/successors unchanged | #compensation-rewiring mutation | WP1 | Diff test: only exact rejected-id occurrences change, order preserved |
+| C5. Atomic mutation + MD render | persistence #revision-and-locking | WP3 | Idempotent no-op leaves bytes unchanged (md5) |
+| C6. Deterministic JSON result | cli-contract #compensation-rewiring | WP3 | Golden JSON envelope test |
+| C7. Idempotency decision documented | #compensation-rewiring idempotency | Design (done), WP3 | Re-run: `revision_after == revision_before`, `affected_successors: []` |
+| C8. No arbitrary graph-editing API | cli-contract | WP3 | grep gate: no `set_predecessors`/`edit_graph` |
+| C9. Do not weaken immutability of accepted/active plans | #compensation-rewiring preconditions | WP1 | Active/accepted/terminal successors never mutated |
 
 ## Current evidence and baseline
 
 | Area | Current implementation | Evidence path/commit | Verified behavior | Gap |
 |---|---|---|---|---|
-| Plan reject sets compensating plan | `src/cli/commands.rs::plan_reject` | dev `2dc1009` | Sets `node.compensating_plan`; comment: "Downstream rerouting is the reviewer's responsibility; we leave successor predecessor edges to a `plan add` of the compensation node (kept bounded)." | No operation performs the reroute |
-| State machine | `docs/design/execution-graph/state-machine-and-algorithms.md` | pre-this-plan | Had misleading `REJECTED -> BLOCKED` row no operation implements; bootstrap Plan 02 stayed REJECTED | Corrected by this plan's design commit `8fe9ab4` |
-| Persistence transaction | `src/infrastructure/toml_store.rs::save_with_revision` | dev `2dc1009` | lock -> reload -> revision check -> mutate -> atomic write -> render; bumps revision once | Reusable as-is; no change needed |
-| Cycle detection | `src/domain/validation.rs::topological_sort` | dev `2dc1009` | Returns `MineError::GraphCycle` with cycle path on cycle | Reusable for post-rewire cycle check |
-| Ancestor lookup | `src/domain/graph.rs::PlanWorkspace::is_hard_ancestor`, `get`, `get_mut` | dev `2dc1009` | Pure graph traversal helpers | Reusable |
-| Error model | `src/domain/error.rs::MineError` + `code()` | dev `2dc1009` | Stable `MINE_*` codes | Add `RewireSuccessorLocked` variant + code |
-| Exit-code map | `src/output/mod.rs::exit_code_for` | dev `2dc1009` | Maps domain errors to exit codes | Add mapping for new variant |
-| CLI dispatch | `src/cli/mod.rs::command_name`, `commands::handle` | dev `2dc1009` | `mine plan add|show|start|implemented|accept|reject` dispatched | Add `("plan","rewire-compensation")` arm + handler |
-| Authoritative graph | `docs/plan/execution-graph.toml` rev 17 | dev `2dc1009` | Plan 05 REJECTED (`compensating_plan="05-1"`); Plan 06 BLOCKED `hard=[04,05]`; Plan 05-1 DRAFT `hard=[03]` | 06 must be rewired to `[04,05-1]` after this plan is accepted (reviewer step, not this plan) |
+| `mine plan add` creates DRAFT | `src/cli/commands.rs::plan_add` | dev `2dc1009` | New node `status: PlanStatus::Draft` | Always DRAFT; no release |
+| `mine plan start` requires READY | `src/cli/commands.rs::plan_start` (line ~727 `if !matches!(current_status, PlanStatus::Ready)`) | dev `2dc1009` | Rejects non-READY with `MINE_INVALID_TRANSITION` | DRAFT cannot start |
+| Automatic successor release only in accept | `src/cli/commands.rs::plan_accept` release pass | dev `2dc1009` | Releases BLOCKED successors whose hard preds all accepted, inside accept | Cannot reach a standalone DRAFT |
+| Plan reject sets compensating plan | `src/cli/commands.rs::plan_reject` | dev `2dc1009` | Sets `compensating_plan`; comment: "Downstream rerouting is the reviewer's responsibility…" | No operation reroutes |
+| Dead `REJECTED -> BLOCKED` edge | `src/domain/status.rs::validate_transition` arm `(Rejected, Blocked) => true` + its test | dev `2dc1009` | Allowed by code but used by no operation; design removed the row | Remove the dead arm + test (no-historical-baggage) |
+| Persistence transaction | `src/infrastructure/toml_store.rs::save_with_revision` | dev `2dc1009` | lock -> reload -> revision check -> closure mutate (closure sets `revision = expected+1`) -> validate -> atomic write -> render | Reusable; closure controls revision bump |
+| Store writes identical bytes on unchanged ws | `save_with_revision` | dev `2dc1009` | Re-serializes + rewrites even if closure returns ws unchanged (revision unchanged if closure keeps it) | Enables rewire idempotent no-op without a new store API |
+| Cycle detection | `src/domain/validation.rs::topological_sort` | dev `2dc1009` | `MineError::GraphCycle` with cycle path | Reusable |
+| Ancestor/graph helpers | `src/domain/graph.rs` (`get`, `get_mut`, `is_hard_ancestor`, insertion order) | dev `2dc1009` | Pure traversal | Reusable |
+| Error + exit map | `src/domain/error.rs`, `src/output/mod.rs::exit_code_for` | dev `2dc1009` | Stable `MINE_*` codes | Add `RewireSuccessorLocked` |
+| CLI dispatch | `src/cli/mod.rs::command_name`, `commands::handle` | dev `2dc1009` | `plan add|show|start|implemented|accept|reject` | Add `release` + `rewire-compensation` arms |
+| Authoritative graph | `docs/plan/execution-graph.toml` **rev 18** | dev `9567569` | Plan 09 DRAFT `hard=[03]`; Plan 05-1 DRAFT `hard=[03]`; Plan 06 BLOCKED `hard=[04,05]`; 05 REJECTED `compensating_plan="05-1"` | 09 + 05-1 unreachable without release; 06 needs rewire |
 
 ## Research source register
 
-No new external technology is introduced. This plan reuses the accepted
-in-repository execution-graph engine and the existing CLI/envelope contracts.
-The only design sources are repository design documents (cited above) and the
-accepted implementation on `dev` (`2dc1009`). No web research is required
-because the capability is an internal graph-lifecycle operation with no
-external protocol, library, or standard dependency. (Per `mine-plan-create`
-Phase 4, external research applies to material external technologies; none
-apply here.)
+No new external technology is introduced. Both operations reuse the accepted
+in-repository execution-graph engine and CLI/envelope contracts. The only
+sources are repository design documents (cited above) and the accepted
+implementation on `dev`. No web research is required: these are internal
+graph-lifecycle operations with no external protocol/library/standard
+dependency. (Per `mine-plan-create` Phase 4, external research applies to
+material external technologies; none apply here.)
 
 ## Decisions
 
 ### Material user decisions
 
-- **Idempotency model**: idempotent success on re-run with no affected
-  successors (writes nothing, bumps no revision, returns
-  `revision_before == revision_after`, `affected_successors: []`), versus a
-  precise stable error. The user delegated this to Design; the design commits
-  it as idempotent success for automation safety (callers retry without error
-  branches), documented in `state-machine-and-algorithms.md#compensation-rewiring`.
-- **Hard predecessor and lineage**: the plan is rooted in the Plan 03
-  lifecycle/CLI lineage, hard predecessor `["03"]`, as the user requested. It
-  does NOT depend on `04`, `05`, `05-1`, or `06` and can be implemented and
-  accepted independently of the MCP track, so the rewiring capability exists
-  before any live reroute is attempted.
-- **Live reroute is the reviewer's post-acceptance step, not this plan's
-  implementation**: this plan implements and tests the capability on ISOLATED
-  TEMPORARY repositories only. The live `06` -> `05-1` reroute happens only
-  after this plan is independently accepted and merged into `dev`.
+- **Two operations in one plan** (user directive Plan 09 owns both related
+  lifecycle closures). They share the domain/CLI/persistence scaffolding and
+  the same test discipline, so one plan is the right increment.
+- **Append-only lifecycle, preserve registration/release distinction**: do NOT
+  change `mine plan add` to silently make plans executable. Release remains an
+  explicit, separate gate (see governance #registration-and-release).
+- **Live reroute + live release of 05-1 are reviewer post-acceptance steps**,
+  not this plan's implementation. This plan implements + tests the capability
+  on ISOLATED TEMPORARY repositories only.
+- **Break-glass exception** authorizing exactly one manual mutation
+  (Plan 09 DRAFT -> READY, revision -> +1) so Plan 09 itself can be started;
+  recorded below.
 
 ### Local decisions made by the planner
 
-- **Command placement**: `mine plan rewire-compensation` under the `plan`
-  group (not `mine graph`), because it is the deterministic closure of
-  `mine plan reject` (which set `compensating_plan`) and is anchored on a
-  single rejected plan id, even though it mutates multiple successors' edges.
-  A bare `mine graph rewire` would suggest arbitrary graph editing, which
-  requirement 8 forbids.
-- **Rewire both hard and soft predecessors**: every exact occurrence of the
-  rejected id in either `hard_predecessors` or `soft_predecessors` of mutable
-  successors is replaced, because leaving any predecessor pointing at a
-  terminal-rejected plan is a stale edge. Soft deps do not block readiness,
-  but consistency demands their rerouting; this is simpler and more complete
-  than rewiring only hard deps and emitting warnings.
-- **Replacement status gate**: the replacement must exist and not be
-  `REJECTED` (no circular compensation). The requirement does not mandate the
-  replacement be `READY`/`ACCEPTED`; a `DRAFT`/`BLOCKED` replacement simply
-  leaves the successor blocked until the replacement is accepted, which is
-  correct. (In the live scenario, `05-1` is `READY`.)
-- **Predecessor order preservation**: replacement is in-place; order, count
-  (minus the rejected id, plus the compensating id where it replaces), and
-  unrelated entries are identical. If a successor listed the rejected id
-  twice (should not happen due to structural validation, but defensively),
-  each exact occurrence is replaced once.
-- **Affected-successors communication**: the pure domain function returns
-  `(PlanWorkspace, Vec<String>)` (new workspace + affected successor ids in
-  stable insertion order). The CLI handler threads the affected list out of
-  the `save_with_revision` closure via a captured `std::cell::RefCell<Option<Vec<String>>>`
-  read after the transaction commits.
-- **New error variant**: `MineError::RewireSuccessorLocked { plan_id, successor_id, successor_status }`
-  with code `MINE_REWIRE_SUCCESSOR_LOCKED`, mapped to exit `3` (GATE), since a
-  locked successor is a workspace/lifecycle gate failure on the same footing
-  as `PredecessorNotAccepted`/`EvidenceMissing`.
-- **Result data shape**: `{"rejected_plan", "compensating_plan", "affected_successors"}`
-  with top-level `revision_before`/`revision_after` (equal on idempotent
-  no-op). Command identifier `"plan.rewire-compensation"`.
+- **Use `save_with_revision` for both commands; no new store API.** The store
+  re-serializes + rewrites even when the closure returns the workspace
+  unchanged, but it does **not** bump revision unless the closure sets it. So
+  for rewire's idempotent no-op (no affected successors), the closure leaves
+  `revision = expected` and returns the unchanged workspace: the store writes
+  byte-identical TOML and identical MD, `revision_after == revision_before`,
+  nothing observable changes (md5-verified in tests). This avoids a
+  speculative `with_locked`/conditional-write helper, per SOLID
+  no-speculative-abstraction.
+- **`rewire_compensation` no-op detection inside the closure**: the closure
+  runs the pure domain fn on the reloaded workspace, captures the affected
+  list via a `std::cell::RefCell<Option<Vec<String>>>` read after the
+  transaction, and bumps revision only when affected is non-empty.
+- **No new error variant for release**: release reuses
+  `MINE_PLAN_NOT_FOUND` and `MINE_INVALID_TRANSITION`; unsatisfied
+  predecessors are reported in `data` and are never an error (BLOCKED is a
+  valid release outcome).
+- **One new error variant for rewire**: `MineError::RewireSuccessorLocked { plan_id, successor_id, successor_status }`,
+  code `MINE_REWIRE_SUCCESSOR_LOCKED`, mapped to exit `3` (GATE) — a
+  workspace/lifecycle gate failure on the footing of
+  `PredecessorNotAccepted`/`EvidenceMissing`.
+- **Rewire both hard and soft predecessors** (exact in-place replacement,
+  order preserved); leaving any predecessor pointing at a terminal-rejected
+  plan is a stale edge. Soft deps don't block readiness but consistency
+  demands rerouting.
+- **Release is not idempotent-success**: only DRAFT is accepted; re-running on
+  READY/BLOCKED returns `MINE_INVALID_TRANSITION` and writes nothing (a
+  precise stable error, by design — see #plan-release idempotency).
+- **Remove the dead `REJECTED -> BLOCKED` edge** from `status.rs::validate_transition`
+  and its `allowed_edges_pass` test assertion, as no-historical-baggage cleanup
+  aligned with the design (the row was removed from the state-machine doc in
+  commit `8fe9ab4`). Note the only code path that referenced it was the dead
+  arm itself; no operation transitions REJECTED -> BLOCKED.
+- **Command placement under `mine plan`** for both (not `mine graph`);
+  `plan release` is anchored on one plan id; `plan rewire-compensation` is
+  the deterministic closure of `plan reject`. A `mine graph` placement would
+  suggest arbitrary graph editing (forbidden).
 
 ### Assumptions and unresolved gates
 
-- Assumes the accepted `mine` CLI on `dev` exposes the existing
-  `save_with_revision`, `topological_sort`, and `MineError::GraphCycle` as
-  verified above; this is repository evidence, not an assumption.
-- Unresolved until acceptance: whether reviewers prefer `mine graph` placement
-  (already decided as `mine plan` here; recorded for review).
+- Assumes the accepted `mine` CLI on `dev` exposes `save_with_revision`,
+  `topological_sort`, `MineError::GraphCycle`, and the envelope helpers as
+  verified above (repository evidence, not assumption).
+- Unresolved until acceptance: reviewers confirm `mine plan` placement
+  (decided here; recorded for review).
 
 ## Scope
 
 ### In scope
 
-- A pure domain operation `rewire_compensation(ws, rejected_id) -> (PlanWorkspace, Vec<String>)`
-  and its validation (preconditions 1-5 above), in a new `src/domain/rewire.rs`.
-- One new `MineError` variant + code + exit-code mapping.
-- One new CLI command handler `plan_rewire_compensation` and its dispatch arm.
-- The deterministic JSON result envelope (command id, revisions, data).
-- Integration and domain tests on ISOLATED TEMPORARY repositories.
-- A live-graph-byte-unchanged invariant test (the suite never touches the live
+- Pure domain `release_plan` and `rewire_compensation` operations in new
+  `src/domain/plan_release.rs` and `src/domain/rewire.rs`.
+- Remove the dead `REJECTED -> BLOCKED` edge + its test assertion.
+- One new `MineError` variant (`RewireSuccessorLocked`) + code + exit-code map.
+- CLI handlers `plan_release` and `plan_rewire_compensation` + dispatch arms +
+  command names (`plan.release`, `plan.rewire-compensation`).
+- Deterministic JSON result envelopes for both.
+- Integration tests `tests/release.rs` and `tests/rewire.rs` + domain unit
+  tests, on ISOLATED TEMPORARY repositories.
+- A live-graph-byte-unchanged invariant test (suite never touches the live
   repo).
 
 ### Non-goals
 
-- Do NOT create or expose any generic graph-editing API (no `set_predecessors`,
-  `edit_plan`, `move_plan`, etc.).
-- Do NOT perform the live `06` -> `05-1` reroute in this plan's
-  implementation. That is the reviewer's post-acceptance step.
+- Do NOT change `mine plan add` (registration stays DRAFT).
+- Do NOT change automatic successor release inside `mine plan accept` (keep it).
+- Do NOT create any generic graph-editing API (no `set_status`/`set_predecessors`/`edit_plan`).
+- Do NOT perform the live `06` -> `05-1` reroute or the live `05-1` release in
+  this plan's implementation (reviewer post-acceptance steps).
 - Do NOT implement, resume, or depend on Plan 05-1 (the MCP official-SDK
   compensation). This plan is independent of the MCP track.
-- Do NOT change the MCP tool surface (no new MCP tool); the capability is
-  CLI-only for now.
-- Do NOT touch the rejected plan's status or fields (REJECTED is terminal).
-- Do NOT manually edit `docs/plan/execution-graph.{toml,md}` at any point.
+- Do NOT change the MCP tool surface (CLI-only for now).
+- Do NOT touch a rejected plan's status or fields (REJECTED is terminal).
+- Do NOT manually edit the graph except the single break-glass mutation below.
 
 ### Historical baggage to remove
 
-- The misleading `REJECTED -> BLOCKED` state-machine row was already removed
-  by the design commit `8fe9ab4` accompanying this plan. No further code
-  baggage exists for this feature (it is net-new).
+- The dead `(Rejected, Blocked) => true` arm in `status.rs::validate_transition`
+  and its `allowed_edges_pass` assertion `Rejected.validate_transition("02", Blocked)`.
+  (The misleading state-machine row was already removed by design commit
+  `8fe9ab4`; this is the matching code cleanup.)
+
+## Break-glass exception
+
+A one-time governance exception because no accepted command currently exists
+that can release Plan 09 itself (the whole point of this plan). It authorizes
+**only and exactly**:
+
+- Plan 09: `DRAFT -> READY`;
+- graph revision `18 -> 19`;
+- deterministic regeneration of `docs/plan/execution-graph.md` via the
+  accepted renderer.
+
+It explicitly prohibits, for this same exception:
+
+- changing any plan's dependencies (predecessors);
+- releasing Plan 05-1;
+- rewiring Plan 06 (or any successor of 05);
+- modifying any other plan's state, owner, report, or commits;
+- beginning Plan 05-1;
+- any repeated manual graph mutation after Plan 09 becomes startable.
+
+### Procedure (executed once during this planning turn, before start)
+
+1. Record pre-change hashes:
+   - `docs/plan/execution-graph.toml` pre-MD5: `a1422d4ce86b6b1572a91fbba166f2e6`
+   - `docs/plan/execution-graph.md` pre-MD5: `b8f25d7a6c8112404d9d64c0c0f16bb6`
+2. Make the smallest schema-valid TOML mutation: change the Plan 09 node's
+   `status = "DRAFT"` to `status = "READY"`, and the top-level
+   `revision = 18` to `revision = 19`. No other line is touched.
+3. Regenerate the Markdown view with the accepted renderer
+   (`mine graph render`); do NOT hand-edit the Markdown.
+4. Record post-change hashes; confirm only Plan 09's status line changed in
+   TOML and the Markdown regenerated deterministically.
+5. Commit the two files in a **dedicated commit** whose message clearly
+   identifies the one-time lifecycle break-glass action and records the
+   pre/post hashes and the +1 revision.
+6. Confirm `mine graph validate --format json` is `ok:true` and Plan 09 is
+   `READY`.
+
+### Pre/post hashes (filled in at execution)
+
+- Pre-TOML: `a1422d4ce86b6b1572a91fbba166f2e6`
+- Pre-MD:   `b8f25d7a6c8112404d9d64c0c0f16bb6`
+- Post-TOML: *(recorded at execution)*
+- Post-MD:   *(recorded at execution)*
+- Revision: `18 -> 19`
+
+After this single exception: `mine plan start --id 09 ...` (accepted CLI), then
+implement the amended plan, test only on isolated temp repos, mark
+IMPLEMENTED, stop for review.
 
 ## Dependency and parallelism graph
 
 ```mermaid
 flowchart LR
-  03[03 ACCEPTED] --> 09[09 rewire-compensation]
+  03[03 ACCEPTED] --> 09[09 release + rewire]
 ```
 
 | Work package | Depends on | Parallel group | Exclusive write scope | Shared-file requests | Start gate | Join gate |
 |---|---|---|---|---|---|---|
-| WP1 domain rewire | 03 accepted | A | `src/domain/rewire.rs` (new), `src/domain/mod.rs`, `src/domain/error.rs` | `src/domain/error.rs`, `src/domain/mod.rs` | 03 ACCEPTED | WP1 tests green |
-| WP2 output/exit code | WP1 | A | `src/output/mod.rs` | `src/output/mod.rs` | WP1 done | exit-code test green |
-| WP3 CLI handler + dispatch + result | WP1, WP2 | A | `src/cli/commands.rs`, `src/cli/mod.rs` | `src/cli/commands.rs`, `src/cli/mod.rs` | WP1+WP2 done | end-to-end test green |
+| WP1 domain (release + rewire + dead-edge removal) | 03 accepted; break-glass release; `mine plan start` | A | `src/domain/plan_release.rs` (new), `src/domain/rewire.rs` (new), `src/domain/mod.rs`, `src/domain/error.rs`, `src/domain/status.rs` | `src/domain/mod.rs`, `src/domain/error.rs`, `src/domain/status.rs` | 09 IN_PROGRESS | domain tests green |
+| WP2 error code + exit-code map | WP1 | A | `src/output/mod.rs` | `src/output/mod.rs` | WP1 done | exit-code test green |
+| WP3 CLI handlers + dispatch + tests | WP1, WP2 | A | `src/cli/commands.rs`, `src/cli/mod.rs`, `tests/release.rs` (new), `tests/rewire.rs` (new) | `src/cli/commands.rs`, `src/cli/mod.rs` | WP1+WP2 done | end-to-end test green |
 
-Serialization note: WP1 -> WP2 -> WP3 are sequential (CLI depends on domain +
-exit code). There is no parallel lane; the plan is a single narrow vertical
-slice. Shared files (`src/cli/commands.rs`, `src/domain/error.rs`,
-`src/output/mod.rs`) have this plan as their sole active owner because Plan
-05-1 does not resume until this plan is accepted and the live reroute is
-performed. If a future plan overlaps `src/cli/commands.rs` while 09 is
-active, the parallel-execution protocol serializes that file (one owner).
+Serialization: WP1 -> WP2 -> WP3 sequential (CLI depends on domain + exit
+code). No parallel lane; one narrow vertical slice. Shared files
+(`src/cli/commands.rs`, `src/domain/error.rs`, `src/domain/mod.rs`,
+`src/domain/status.rs`, `src/output/mod.rs`) have this plan as their sole
+active owner because Plan 05-1 does not resume until this plan is accepted and
+the live reroute + release are performed.
 
 ## Work packages
 
-### WP1 — Domain compensation-rewiring operation
+### WP1 — Domain operations (release, rewire) + dead-edge removal
 
-- Purpose: pure domain validation + in-place predecessor substitution +
-  affected-successor computation.
+- Purpose: pure domain validation + mutation for both operations; remove the
+  dead `REJECTED -> BLOCKED` edge.
 - Inputs and predecessors: `src/domain/graph.rs` (`PlanWorkspace`, `PlanNode`,
-  `get`, `get_mut`, stable insertion order), `src/domain/validation.rs::topological_sort`
-  (cycle check), `src/domain/status.rs::PlanStatus`, `src/domain/error.rs::MineError`.
+  `get`, `get_mut`, insertion order), `src/domain/validation.rs::topological_sort`,
+  `src/domain/status.rs::PlanStatus` + `validate_transition`, `src/domain/error.rs::MineError`.
 - Exact files/symbols/contracts:
-  - New `src/domain/rewire.rs`.
-  - `pub fn rewire_compensation(ws: &mut PlanWorkspace, rejected_id: &str) -> MineResult<Vec<String>>`
-    — validates preconditions on `ws`, then mutates `ws` in place (replaces
-    exact rejected-id occurrences in `hard_predecessors` and
-    `soft_predecessors` of each mutable successor, preserves order, refreshes
-    `updated_at`), and returns the affected successor ids in stable insertion
-    order. Does NOT bump revision (the caller's transaction does) and does NOT
-    touch the rejected plan node.
-  - Register `pub mod rewire;` in `src/domain/mod.rs`.
+  - New `src/domain/plan_release.rs`:
+    `pub fn release_plan(ws: &mut PlanWorkspace, plan_id: &str, now: &str) -> MineResult<()>`
+    — errors if plan missing (`PlanNotFound`) or status != DRAFT
+    (`InvalidTransition`); computes `unsatisfied` from hard preds not `Accepted`;
+    sets status `Ready` if `unsatisfied.is_empty()` else `Blocked`; sets
+    `updated_at = now`; does not bump revision (caller's transaction does); no
+    other node touched. (The handler derives `status_before`/`status_after`/
+    `hard_predecessors`/`unsatisfied_predecessors` from the post-mutation ws +
+    the constant `DRAFT` precondition; pure derivation, no threading needed.)
+  - New `src/domain/rewire.rs`:
+    `pub fn rewire_compensation(ws: &mut PlanWorkspace, rejected_id: &str, now: &str) -> MineResult<Vec<String>>`
+    — validates preconditions (original exists & REJECTED; `compensating_plan`
+    non-empty; replacement exists & not REJECTED; each successor referencing
+    the rejected id in hard/soft preds is DRAFT/BLOCKED/READY); for each such
+    mutable successor, replaces every exact occurrence of `rejected_id` in
+    `hard_predecessors` and `soft_predecessors` with the compensating id
+    in-place (order preserved), refreshes `updated_at`; returns the affected
+    successor ids in stable insertion order; does not bump revision; does not
+    touch the rejected node. After mutation, runs `topological_sort` on the
+    mutated workspace for a cycle check; on `GraphCycle`, leaves `ws` unchanged
+    (mutation must be staged so it can be discarded on cycle — implement by
+    mutating a clone and swapping only after the cycle check passes). On any
+    error, `ws` is left unmutated.
+  - Register `pub mod plan_release;` and `pub mod rewire;` in `src/domain/mod.rs`.
   - New `MineError::RewireSuccessorLocked { plan_id: String, successor_id: String, successor_status: String }`
-    in `src/domain/error.rs`, with `code()` -> `"MINE_REWIRE_SUCCESSOR_LOCKED"`.
-- Current behavior: no rewire operation exists.
-- Required final behavior: see the algorithm in
-  `state-machine-and-algorithms.md#compensation-rewiring` (preconditions 1-5,
-  exact-id in-place replacement, cycle check via `topological_sort`, affected
-  list in insertion order).
-- Input/output/error/lifecycle semantics: pure, no I/O. Errors (all
-  `MineResult::Err`): `PlanNotFound` (original or replacement missing),
-  `InvalidTransition` (original not REJECTED), `GraphInvalid` (`compensating_plan`
-  empty), `GraphInvalid` (replacement is REJECTED), `RewireSuccessorLocked`
-  (any referencing successor is IN_PROGRESS/IMPLEMENTED/ACCEPTED/REJECTED),
-  `GraphCycle` (post-rewire cycle). On any error `ws` is left unmutated
-  (validation precedes mutation).
-- Transactions, concurrency, retries, timeouts: none (pure). Concurrency is
-  the CLI handler's concern (WP3) via `save_with_revision`.
-- Security/privacy: none.
-- Configuration/dependencies: none.
-- Cleanup/removals: none.
-- Edge and failure cases:
-  - original not REJECTED; `compensating_plan` empty; replacement missing;
-    replacement is REJECTED; successor locked (active/accepted/terminal);
-    cycle through the compensating plan; successor lists the rejected id in
-    both hard and soft (both replaced); successor does not reference the
-    rejected id at all (unchanged, not in affected list); no successor
-    references the rejected id (affected list empty — idempotent no-op path
-    is the handler's, but the domain fn returns an empty Vec without error).
-- Tests and fixtures (`tests/domain.rs` additions): seed a `PlanWorkspace`
-    with a REJECTED plan `02` (`compensating_plan="02-1"`), an accepted
-    `02-1`, and BLOCKED/DRAFT/READY successors depending on `02`; assert
-    affected list == the referencing successors, predecessors now reference
-    `02-1`, order preserved, unrelated edges intact. One test per error case
-    above. One idempotent test: call twice, second returns `Vec::new()`, `ws`
-    unchanged. One cycle test where `05-1` depends (transitively) on a
-    successor -> `GraphCycle`.
-- Narrow verification commands and expected evidence:
-  - `cargo test --lib rewire` -> domain unit tests pass.
-  - `cargo test --test domain rewire` -> integration domain tests pass.
-  - `cargo clippy -p mine --lib -- -D warnings` -> no warnings in new module.
-- Downstream artifact: `rewire_compensation` callable by WP3.
-- Suggested commit: `feat(domain): compensation-rewiring operation and validation`.
+    in `src/domain/error.rs`, `code()` -> `"MINE_REWIRE_SUCCESSOR_LOCKED"`.
+  - `src/domain/status.rs::validate_transition`: remove the
+    `(Self::Rejected, Self::Blocked) => true` arm; remove the
+    `PlanStatus::Rejected.validate_transition("02", PlanStatus::Blocked)?;`
+    line from `allowed_edges_pass`. Update the doc comment if it mentions the
+    edge. (No behavior change for any real operation; the arm was dead.)
+- Current behavior: neither operation exists; the dead edge is allowed-but-unused.
+- Required final behavior: see design #plan-release and #compensation-rewiring.
+- Input/output/error/lifecycle semantics: pure, no I/O.
+  - `release_plan` errors: `PlanNotFound`, `InvalidTransition` (not DRAFT).
+  - `rewire_compensation` errors: `PlanNotFound` (original or replacement),
+    `InvalidTransition` (original not REJECTED), `GraphInvalid`
+    (`compensating_plan` empty; replacement is REJECTED),
+    `RewireSuccessorLocked` (a referencing successor is IN_PROGRESS/
+    IMPLEMENTED/ACCEPTED/REJECTED), `GraphCycle`. On any error, `ws` unchanged.
+- Tests and fixtures (domain unit tests in the new modules + `tests/domain.rs`):
+  - release: no-preds DRAFT -> READY; all-preds-accepted DRAFT -> READY with
+    `unsatisfied` empty; one pred BLOCKED -> BLOCKED with `unsatisfied` naming
+    it; non-DRAFT (READY/BLOCKED/IN_PROGRESS/ACCEPTED/REJECTED) -> error, ws
+    unchanged; missing id -> `PlanNotFound`.
+  - rewire: seed REJECTED `02` (`compensating_plan="02-1"`), accepted `02-1`,
+    BLOCKED/DRAFT/READY successors on `02` -> affected == referencing
+    successors, preds now `02-1`, order preserved, unrelated intact; soft-only
+    dep rewired; not-REJECTED original -> `InvalidTransition`; empty
+    `compensating_plan` -> `GraphInvalid`; missing replacement -> `PlanNotFound`;
+    replacement REJECTED -> `GraphInvalid`; locked successor
+    (IN_PROGRESS/IMPLEMENTED/ACCEPTED/REJECTED) -> `RewireSuccessorLocked`, ws
+    unchanged; cycle (`05-1` hard-depends transitively on a successor) ->
+    `GraphCycle`, ws unchanged; sibling-id safety (`050` not rewired for `05`);
+    idempotent: call twice, second returns `Vec::new()`, ws unchanged.
+- Narrow verification:
+  - `cargo test --lib plan_release` green; `cargo test --lib rewire` green.
+  - `cargo test --test domain` green.
+  - `cargo clippy -p mine --lib -- -D warnings` clean in new modules.
+- Downstream artifact: both domain fns callable by WP3.
+- Suggested commit: `feat(domain): plan release and compensation rewiring operations`.
 
 ### WP2 — Error code and exit-code mapping
 
 - Purpose: expose `MINE_REWIRE_SUCCESSOR_LOCKED` and map it to exit `3`.
-- Exact files/symbols: `src/domain/error.rs` (variant added in WP1), `src/output/mod.rs::exit_code_for`
-  add arm `MineError::RewireSuccessorLocked { .. } => exit_code::GATE`.
-- Tests: extend the `exit_code_for` unit tests in `src/output/mod.rs` to
-  assert `RewireSuccessorLocked` maps to GATE (3); assert `code()` returns
-  `MINE_REWIRE_SUCCESSOR_LOCKED`.
+- Exact files: `src/output/mod.rs::exit_code_for` add arm
+  `MineError::RewireSuccessorLocked { .. } => exit_code::GATE`.
+- Tests: extend `exit_code_for` unit tests — assert `RewireSuccessorLocked`
+  maps to GATE (3); assert `code()` returns `MINE_REWIRE_SUCCESSOR_LOCKED`.
+  (Release adds no new variant, so no new mapping.)
 - Narrow verification: `cargo test --lib exit_code` green.
 - Suggested commit: `feat(output): map MINE_REWIRE_SUCCESSOR_LOCKED to GATE`.
 
-### WP3 — CLI handler, dispatch, deterministic result, integration tests
+### WP3 — CLI handlers, dispatch, deterministic results, integration tests
 
-- Purpose: wire `rewire_compensation` into the shared
-  `TomlStore::save_with_revision` transaction and emit the stable CLI result.
-- Inputs and predecessors: WP1 domain fn, WP2 exit-code map, existing
-  `src/cli/commands.rs::save_with_revision`, `build_context`, `envelope_for`,
-  `flag`, `SystemClock`.
+- Purpose: wire both domain fns into `save_with_revision` and emit stable results.
+- Inputs: WP1 fns, WP2 exit map, existing `save_with_revision`, `build_context`,
+  `envelope_for`, `flag`, `SystemClock`.
 - Exact files/symbols/contracts:
-  - `src/cli/commands.rs`: new `fn plan_rewire_compensation(parsed, rest) -> HandlerResult`.
-    Requires `--id <rejected-id>`. Loads the current revision (read), then:
-    - Computes `affected_successors` and performs the mutation inside
-      `save_with_revision(&ctx, expected, |mut w| { ... })`. Because the
-      closure returns only `PlanWorkspace`, the affected list is threaded out
-      via a captured `std::cell::RefCell<Option<Vec<String>>>` set inside the
-      closure and read after the transaction commits.
-    - Idempotent no-op path: if, under the lock after reload, no successor
-      references the rejected id, the handler MUST NOT call a write
-      `save_with_revision`. Instead it leaves the graph untouched and
-      returns the envelope with `revision_before == revision_after` (current
-      revision) and `data.affected_successors == []`. (Implementation detail:
-      the pure domain fn returning an empty affected list is the signal; the
-      handler short-circuits the write when affected is empty. To avoid a
-      read-modify-write race, the no-op detection MUST occur under the lock:
-      use a read under the lock or run the domain fn inside the closure and
-      skip the actual persistence write only when the store's save path
-      supports a no-write fast path — see implementation note below.)
-    - Builds the envelope: `command="plan.rewire-compensation"`,
-      `with_revision(revision_before, revision_after)`,
-      `with_data({"rejected_plan": id, "compensating_plan": comp, "affected_successors": [...]})`.
-      where `comp` is read from the rejected plan's `compensating_plan` (load
-      it under the lock too, or read from the post-mutation ws before it is
-      replaced — capture it from the rejected node inside the closure).
-  - `src/cli/mod.rs::command_name`: add `("plan", "rewire-compensation") => "plan.rewire-compensation"`.
-  - `src/cli/mod.rs` dispatch (`commands::handle`): add the `"rewire-compensation" => plan_rewire_compensation(parsed, rest)` arm (the match in `commands::handle` — see dev `2dc1009` for the existing `"accept"/"reject"` arms).
-- Implementation note on the atomic no-op: the cleanest design that keeps the
-  no-op safe under concurrency is to ALWAYS run inside `save_with_revision`:
-  the closure calls the domain fn; if affected is empty, the closure returns
-  the workspace UNCHANGED (no predecessor edits, no `revision` bump) — BUT the
-  store currently bumps revision on every successful closure. Therefore, to
-  honor "no revision bump on idempotent no-op", the handler must detect the
-  no-op WITHOUT persisting. Preferred approach: acquire the graph read lock
-  (or reuse `save_with_revision` with a closure that signals no-write), load,
-  run the domain fn on a clone; if affected is empty, release without writing
-  and report current revision. If the existing `save_with_revision` cannot
-  express a no-write path, add a tiny `TomlStore::with_locked<F>(&self, f: F)
-  -> MineResult<R>` helper that only locks+loads (no write, no revision bump)
-  and is used for the no-op path; this is a minimal, non-arbitrary addition
-  strictly for read-under-lock, not a generic edit API. The implementing agent
-  MUST choose whichever the accepted store API supports and record the exact
-  approach in the implementation report. A generic graph editor is NOT
-  permitted under any path.
-- Current behavior: no `rewire-compensation` command.
-- Required final behavior: see `cli-contract.md#compensation-rewiring`.
-- Input/output/error/lifecycle semantics: `--format json` and human modes
-  follow existing plan handlers. Exit codes: 0 success (including idempotent
-  no-op), 2 usage (missing `--id`), 3 gate (locked successor), 4 validation
-  (not REJECTED / empty compensating / replacement REJECTED), 5 conflict
-  (revision/lock), per `cli-contract.md#exit-codes`.
-- Transactions, concurrency, retries, timeouts: `save_with_revision` lock
-  timeout from config; revision conflict on mismatch.
-- Security/privacy: no shell, no Git, no file writes outside the graph and its
-  generated Markdown.
-- Configuration/dependencies: none.
-- Cleanup/removals: none.
-- Edge and failure cases: missing `--id` (usage); original not REJECTED;
-  compensating_plan empty; replacement missing/REJECTED; locked successor;
-  cycle; idempotent re-run; concurrent writers (revision conflict, no silent
-  overwrite); `--no-color`/`--quiet` modes.
-- Tests and fixtures (`tests/rewire.rs` NEW integration file + extend
-  `tests/cli.rs` golden):
-  - stdio/CLI: `mine plan rewire-compensation --id 05 --format json` against an
-    ISOLATED temp repo seeded with `05 REJECTED (compensating_plan="05-1")`,
-    `05-1 READY`, `06 BLOCKED hard=[04,05]`, `04 ACCEPTED` -> assert
-    `ok:true`, `command:"plan.rewire-compensation"`, `revision_after ==
-    revision_before + 1`, `data == {"rejected_plan":"05",
-    "compensating_plan":"05-1","affected_successors":["06"]}`. Assert the
-    temp repo's TOML now has `06 hard=[04,05-1]` and Markdown regenerated.
-  - idempotent re-run on the same temp repo -> `revision_before ==
-    revision_after`, `affected_successors == []`, TOML bytes unchanged.
-  - not-REJECTED original -> `MINE_INVALID_TRANSITION`, exit 4, bytes
-    unchanged (md5).
-  - empty `compensating_plan` -> `MINE_GRAPH_INVALID`, exit 4, bytes unchanged.
-  - missing replacement -> `MINE_PLAN_NOT_FOUND`, exit 4.
-  - replacement is REJECTED -> `MINE_GRAPH_INVALID`, exit 4.
-  - locked successor (`06 IN_PROGRESS`) -> `MINE_REWIRE_SUCCESSOR_LOCKED`,
-    exit 3, bytes unchanged, `06` predecessors still `[04,05]`.
-  - cycle (`05-1` hard-depends on `06`) -> `MINE_GRAPH_CYCLE`, exit 4,
-    bytes unchanged.
-  - sibling-id safety: a successor depending on `050` is NOT rewired when
-    rewiring `05` (only exact `05` matches).
-  - soft-predecessor reroute: a successor with only a soft dep on `05` is
-    rewired to `05-1` in `soft_predecessors`.
-  - unaffected predecessor order/count preservation assertion.
-  - live-graph-byte-unchanged invariant: md5 of the real
-    `docs/plan/execution-graph.toml` equal before and after the whole
-    `tests/rewire.rs` suite (all tests use `tempfile`).
-  - no arbitrary edit API: `grep -rnE "set_predecessors|edit_graph|move_plan"
-    src/` returns nothing (gate).
-- Narrow verification commands and expected evidence:
-  - `cargo test --test rewire` -> all rewire integration tests pass.
-  - `cargo test` -> full suite green.
-  - `cargo run --quiet -- plan rewire-compensation --id 05 --format json`
-    MUST NOT be run against the live repo during implementation (see Scope).
-- Downstream artifact: the accepted `mine plan rewire-compensation` command,
-  ready for the reviewer's post-acceptance live reroute of `06` -> `05-1`.
-- Suggested commit: `feat(cli): mine plan rewire-compensation` and
-  `test(rewire): compensation rewiring integration tests`.
+  - `src/cli/commands.rs`:
+    - `fn plan_release(parsed, rest) -> HandlerResult`: requires `--id`;
+      `expected = load().revision`; `save_with_revision(&ctx, expected, |mut w| {
+         let before = w.get(&id).map(|n| n.status).ok_or(PlanNotFound)?;
+         release_plan(&mut w, &id, &now)?;
+         let after = w.get(&id).expect("present").status;
+         if after != before { w.revision = expected + 1; }   // always true on success
+         Ok(w)
+      })`; build envelope with `command="plan.release"`,
+      `with_revision(expected, saved.revision)` (equal; always
+      `revision_after == revision_before + 1` since release always transitions
+      DRAFT -> READY/BLOCKED), `with_data({plan, status_before:"DRAFT",
+      status_after, hard_predecessors, unsatisfied_predecessors})`. Derive
+      `unsatisfied` from the saved ws (hard preds whose status != Accepted).
+    - `fn plan_rewire_compensation(parsed, rest) -> HandlerResult`: requires
+      `--id` (rejected id); `expected = load().revision`; an
+      `affected_cell: RefCell<Option<Vec<String>>>`; a `comp_cell:
+      RefCell<Option<String>>`;
+      `save_with_revision(&ctx, expected, |mut w| {
+         let comp = w.get(&id).ok_or(PlanNotFound)?.compensating_plan.clone();
+         if comp.is_empty() { return Err(GraphInvalid { detail: "rejected plan has no compensating_plan".into() }); }
+         let affected = rewire_compensation(&mut w, &id, &now)?;
+         *affected_cell.borrow_mut() = Some(affected.clone());
+         *comp_cell.borrow_mut() = Some(comp);
+         if !affected.is_empty() { w.revision = expected + 1; }   // no bump on no-op
+         Ok(w)
+      })`; after commit, read `affected` and `comp`; build envelope
+      `command="plan.rewire-compensation"`,
+      `with_revision(expected, saved.revision)` (equal on no-op), `with_data({
+      rejected_plan: id, compensating_plan: comp, affected_successors:
+      affected })`.
+  - `src/cli/mod.rs::command_name`: add `("plan","release") =>
+    "plan.release"` and `("plan","rewire-compensation") =>
+    "plan.rewire-compensation"`.
+  - `src/cli/mod.rs` dispatch (`commands::handle` match): add
+    `"release" => plan_release(parsed, rest)` and
+    `"rewire-compensation" => plan_rewire_compensation(parsed, rest)` arms.
+- Exit codes: release — 0 success, 2 usage (missing `--id`), 4
+  (`MINE_INVALID_TRANSITION`/`MINE_PLAN_NOT_FOUND`), 5
+  (`REVISION_CONFLICT`/`LOCK_TIMEOUT`); rewire — 0 success (incl. idempotent
+  no-op), 2 usage, 3 (`MINE_REWIRE_SUCCESSOR_LOCKED`), 4
+  (`MINE_INVALID_TRANSITION`/`MINE_GRAPH_INVALID`/`MINE_PLAN_NOT_FOUND`/`MINE_GRAPH_CYCLE`),
+  5 conflict — per `cli-contract.md#exit-codes`.
+- Tests and fixtures:
+  - `tests/release.rs` NEW (isolated temp repos): DRAFT no-preds -> READY,
+    `revision_after == revision_before + 1`, `data.status_after=="READY"`,
+    `unsatisfied == []`, TOML+MD changed; DRAFT with accepted preds -> READY;
+    DRAFT with BLOCKED pred -> BLOCKED, `unsatisfied` names it,
+    `revision_after == revision_before + 1`; non-DRAFT (READY/IN_PROGRESS/
+    ACCEPTED/REJECTED) -> `MINE_INVALID_TRANSITION`, exit 4, bytes unchanged;
+    missing id -> `MINE_PLAN_NOT_FOUND`; second release on the now-READY node
+    -> `MINE_INVALID_TRANSITION`, bytes unchanged (not idempotent-success);
+    releases never alter other plans.
+  - `tests/rewire.rs` NEW (isolated temp repos): seed `05` REJECTED
+    (`compensating_plan="05-1"`), `05-1` READY, `06` BLOCKED `hard=[04,05]`,
+    `04` ACCEPTED -> `ok:true`, `command:"plan.rewire-compensation"`,
+    `revision_after == revision_before + 1`,
+    `data == {rejected_plan:"05", compensating_plan:"05-1",
+    affected_successors:["06"]}`, temp TOML now `06 hard=[04,05-1]`; idempotent
+    re-run `revision_before == revision_after`, `affected_successors == []`,
+    bytes unchanged; not-REJECTED original -> `MINE_INVALID_TRANSITION`;
+    empty `compensating_plan` -> `MINE_GRAPH_INVALID`; missing replacement ->
+    `MINE_PLAN_NOT_FOUND`; replacement REJECTED -> `MINE_GRAPH_INVALID`;
+    locked successor (`06 IN_PROGRESS`) -> `MINE_REWIRE_SUCCESSOR_LOCKED`,
+    bytes unchanged; cycle (`05-1` hard-depends on `06`) -> `MINE_GRAPH_CYCLE`;
+    sibling-id `050` not rewired; soft-only dep rewired; order/count
+    preservation; live-graph md5 unchanged before/after `tests/rewire.rs`.
+  - `tests/cli.rs` golden: add golden envelopes for `plan.release` READY and
+    `plan.rewire-compensation` success if the suite captures them.
+  - grep gate: `grep -rnE "set_predecessors|edit_graph|move_plan|set_status" src/`
+    returns nothing (no arbitrary edit API).
+- Narrow verification:
+  - `cargo test --test release` green; `cargo test --test rewire` green;
+    `cargo test` full suite green.
+- Downstream artifact: the accepted `mine plan release` and
+  `mine plan rewire-compensation` commands, ready for the reviewer's
+  post-acceptance live reroute + release.
+- Suggested commits: `feat(cli): mine plan release and rewire-compensation`;
+  `test(plan-09): release and rewire integration tests`.
 
 ## Integration and join procedure
 
-1. WP1 produces the pure domain fn with green domain tests.
+1. WP1 produces both domain fns + dead-edge removal; domain tests green.
 2. WP2 adds the error code/exit mapping; `cargo test --lib` green.
-3. WP3 wires the CLI handler + dispatch + result envelope + integration
-   tests; `cargo test` green; clippy clean; the no-op path verified not to
-   bump revision.
-4. Final join verification: `cargo fmt --all -- --check`,
+3. WP3 wires both CLI handlers + dispatch + envelopes + integration tests;
+   `cargo test` green; clippy clean; rewire no-op verified not to bump revision.
+4. Final join: `cargo fmt --all -- --check`,
    `cargo clippy --all-targets --all-features -- -D warnings -W unsafe-code`,
-   `cargo test --all-targets --all-features`, `mine graph validate --format json`
-   (`ok:true`), `mine design validate --format json` (`valid:true`), and the
-   live-graph md5-unchanged invariant.
+   `cargo test --all-targets --all-features`,
+   `mine graph validate --format json` (`ok:true`),
+   `mine design validate --format json` (`valid:true`),
+   live-graph md5-unchanged invariant across `tests/release.rs`+`tests/rewire.rs`.
 
 ## Verification matrix
 
@@ -405,83 +488,82 @@ active, the parallel-execution protocol serializes that file (one owner).
 | Formatting | `cargo fmt --all -- --check` | clean checkout | no diff, exit 0 | WP3 |
 | Lint + unsafe | `cargo clippy --all-targets --all-features -- -D warnings -W unsafe-code` | builds | no warnings, exit 0 | WP3 |
 | Unit (domain+output) | `cargo test --lib` | WP1+WP2 | green | WP1/WP2 |
-| Integration (rewire) | `cargo test --test rewire` | WP3 | all cases green | WP3 |
-| Full suite | `cargo test --all-targets --all-features` | all WPs | 173+ existing + new green, 0 failed | WP3 |
+| Integration release | `cargo test --test release` | WP3 | all cases green | WP3 |
+| Integration rewire | `cargo test --test rewire` | WP3 | all cases green | WP3 |
+| Full suite | `cargo test --all-targets --all-features` | all WPs | existing + new green, 0 failed | WP3 |
 | Graph health | `mine graph validate --format json` | clean repo | `ok:true`, plans unchanged | WP3 |
 | Design health | `mine design validate --format json` | design commit applied | `valid:true`, `warnings:[]` | WP3 |
-| No arbitrary edit API | `grep -rnE "set_predecessors|edit_graph|move_plan" src/` | WP3 | exit 1 (no matches) | WP3 |
-| Live graph untouched | `md5sum docs/plan/execution-graph.toml` before/after `tests/rewire.rs` | WP3 | identical | WP3 |
+| No arbitrary edit API | `grep -rnE "set_predecessors|edit_graph|move_plan|set_status" src/` | WP3 | exit 1 (no matches) | WP3 |
+| Live graph untouched | `md5sum docs/plan/execution-graph.toml` before/after release+rewire suites | WP3 | identical | WP3 |
 
 ## Acceptance checklist
 
-- [ ] Every requirement (1-9) is traced to architecture, implementation, and evidence.
-- [ ] Design changes (`8fe9ab4`) are merged into `dev` before this plan is accepted; cited anchors exist.
-- [ ] The pure domain fn and CLI handler share one transaction; no second implementation.
+- [ ] Both operations (release, rewire) traced to architecture, implementation, evidence.
+- [ ] Design changes (release + rewire) merged into `dev` before acceptance; cited anchors exist.
+- [ ] `mine plan add` unchanged (registration stays DRAFT); explicit release preserved.
+- [ ] Automatic successor release in `mine plan accept` unchanged.
 - [ ] No generic graph-editing API introduced (grep gate).
-- [ ] Idempotent re-run writes nothing, bumps no revision, returns empty affected list.
-- [ ] Accepted/IN_PROGRESS/IMPLEMENTED/REJECTED successors are never mutated (immutability preserved).
-- [ ] All tests run on ISOLATED temp repos; the live graph md5 is unchanged by the suite.
+- [ ] Release accepts only DRAFT; non-DRAFT -> `MINE_INVALID_TRANSITION`; never alters active/accepted/terminal plans.
+- [ ] Release result deterministic (plan, status_before, status_after, hard_predecessors, unsatisfied_predecessors, revisions).
+- [ ] Rewire idempotent no-op writes nothing, bumps no revision, returns empty affected list.
+- [ ] Rewire never weakens immutability of accepted/active successors.
+- [ ] Dead `REJECTED -> BLOCKED` code arm + test removed.
+- [ ] All tests run on ISOLATED temp repos; live graph md5 unchanged by the suite.
 - [ ] Required quality gates pass (`fmt`, `clippy -D warnings -W unsafe-code`, `cargo test`, `mine graph validate`, `mine design validate`).
-- [ ] The live `06` -> `05-1` rewiring is NOT performed by this plan's implementation (it is the reviewer's post-acceptance step).
-- [ ] Plan 05-1 implementation is NOT begun by this plan.
+- [ ] Break-glass exception executed exactly once (Plan 09 DRAFT -> READY, rev 18 -> 19) and recorded below; no other manual graph mutation.
+- [ ] Live `06` -> `05-1` rewiring and live `05-1` release NOT performed by this plan (reviewer post-acceptance steps).
+- [ ] Plan 05-1 implementation NOT begun by this plan.
 
 ## Post-acceptance reviewer handoff (NOT part of this plan's implementation)
 
 After this plan is independently `ACCEPTED` and merged into `dev`, the
-authorized reviewer performs, exactly once, against the live repository:
+authorized reviewer performs, against the live repository, reading the
+current revision immediately before each operation:
 
 ```
-mine plan rewire-compensation --id 05 --format json
+mine plan rewire-compensation --id 05 --format json     # 06: hard preds 05 -> 05-1
+mine plan release --id 05-1 --format json               # 05-1: DRAFT -> READY
+mine plan start --id 05-1 --owner <owner> --run-id <run> --format json
 ```
 
-Expected result on the live repo at revision `17`:
+Expected shapes (revisions read at call time; `revision_after ==
+revision_before + 1` for each mutation):
 
-```json
-{
-  "ok": true,
-  "command": "plan.rewire-compensation",
-  "revision_before": 17,
-  "revision_after": 18,
-  "data": {
-    "rejected_plan": "05",
-    "compensating_plan": "05-1",
-    "affected_successors": ["06"]
-  },
-  "warnings": []
-}
-```
+- rewire: `data == {rejected_plan:"05", compensating_plan:"05-1", affected_successors:["06"]}`,
+  Plan 06 `hard_predecessors` `["04","05"]` -> `["04","05-1"]`.
+- release: `data.status_before == "DRAFT"`, `data.status_after == "READY"`,
+  `data.unsatisfied_predecessors == []` (hard pred `03` is `ACCEPTED`).
+- start: 05-1 DRAFT... -> `IN_PROGRESS` (after release it is `READY`).
 
-This rewrites Plan 06's `hard_predecessors` from `["04","05"]` to
-`["04","05-1"]` and regenerates the Markdown view. The reviewer commits the
-CLI-produced graph bookkeeping separately. Only after that reroute is merged
-does Plan 05-1 implementation resume (05-1 becomes `READY` -> `IN_PROGRESS`
-under normal `mine plan start`).
+Each result is committed. Only after the rewire + release + start sequence is
+merged does Plan 05-1 implementation proceed.
 
 ## Report path
 `docs/plan/reports/09-execution-graph-compensation-rewiring-implementation.md`
 
 ## Suggested commits
 
-- `feat(domain): compensation-rewiring operation and validation`
+- `feat(domain): plan release and compensation rewiring operations`
 - `feat(output): map MINE_REWIRE_SUCCESSOR_LOCKED to GATE`
-- `feat(cli): mine plan rewire-compensation`
-- `test(rewire): compensation rewiring integration tests`
-- (`docs(plan-09): implementation report` after implementation)
+- `feat(cli): mine plan release and rewire-compensation`
+- `test(plan-09): release and rewire integration tests`
+- `docs(plan-09): implementation report`
+- break-glass: `chore(graph): one-time break-glass release Plan 09 DRAFT -> READY (rev 18 -> 19)`
+- lifecycle bookkeeping: `mine plan start` and `mine plan implemented` CLI-generated commits
 
 ## Constraints honored by this plan (explicit)
 
-- The implementation of this plan MUST NOT execute
-  `mine plan rewire-compensation` against the live repository (or any
-  successor currently named in the live graph). The capability is exercised
-  only on ISOLATED TEMPORARY repositories in `tests/rewire.rs` and domain
-  unit tests. Using the unaccepted operation against the live repo before
-  acceptance would itself violate the governance rule this plan exists to
-  enforce.
-- After independent acceptance and merge into `dev`, the reviewer (not the
-  implementation agent) uses the now-accepted `mine plan rewire-compensation
-  --id 05` to rewire Plan 06 from `05` to `05-1`.
-- Only then is Plan 05-1 implementation resumed.
-- No manual editing of `docs/plan/execution-graph.{toml,md}` occurs at any
-  point in this plan. Every graph transition (plan registration via
-  `mine plan add`, eventual acceptance via `mine plan accept`) goes through
-  the accepted CLI.
+- The implementation MUST NOT execute `mine plan release` or
+  `mine plan rewire-compensation` against the live repository (or any plan
+  currently named in the live graph). Both are exercised only on ISOLATED
+  TEMPORARY repositories. Using unaccepted operations against the live repo
+  before acceptance would violate the governance rule this plan enforces.
+- Exactly one manual break-glass mutation (Plan 09 DRAFT -> READY, rev +1) is
+  authorized and recorded; no other manual graph editing occurs.
+- After acceptance, the reviewer (not the implementation agent) uses the
+  now-accepted commands to rewire Plan 06 from `05` to `05-1`, release
+  Plan 05-1, and start it.
+- Every graph transition (`mine plan start`, `mine plan implemented`) goes
+  through the accepted CLI; no `master`/remote/push/reset/clean/force-push.
+- No self-accept: implementation concludes `IMPLEMENTED` only; independent
+  review is required for `ACCEPTED`.
