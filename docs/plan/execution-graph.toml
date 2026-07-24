@@ -1,5 +1,5 @@
 schema_version = 1
-revision = 27
+revision = 28
 project_id = "mine-is-not-everyones"
 workspace_id = "bootstrap-mine-v1"
 stable_branch = "master"
@@ -140,7 +140,7 @@ id = "06"
 path = "docs/plan/06-final-skill-contract-and-plugin-distribution.md"
 title = "Final Skill contract and plugin distribution"
 status = "BLOCKED"
-hard_predecessors = ["04", "05"]
+hard_predecessors = ["04", "05-1"]
 soft_predecessors = []
 design_references = ["docs/design/integrations/skills.md", "docs/design/integrations/distribution.md", "docs/design/interfaces/mcp-contract.md"]
 exclusive_write_paths = ["skills/", "plugins/", ".claude-plugin/", ".agents/", "package.json", "src/infrastructure/embedded_skills.rs", "tests/distribution/"]
@@ -152,7 +152,7 @@ implementation_commits = []
 owner = ""
 run_id = ""
 started_at = ""
-updated_at = ""
+updated_at = "2026-07-24T06:04:45.3802389Z"
 rejection_reason = ""
 compensating_plan = ""
 
