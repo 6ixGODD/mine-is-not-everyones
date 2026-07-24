@@ -1,5 +1,5 @@
 schema_version = 1
-revision = 23
+revision = 24
 project_id = "mine-is-not-everyones"
 workspace_id = "bootstrap-mine-v1"
 stable_branch = "master"
@@ -244,7 +244,7 @@ compensating_plan = "09-1"
 id = "09-1"
 path = "docs/plan/09-1-plan-release-and-compensation-rewiring.md"
 title = "Plan release and compensation rewiring (compensation for rejected Plan 09)"
-status = "DRAFT"
+status = "READY"
 hard_predecessors = ["03"]
 soft_predecessors = []
 design_references = ["docs/design/execution-graph/state-machine-and-algorithms.md#plan-release", "docs/design/execution-graph/state-machine-and-algorithms.md#compensation-rewiring", "docs/design/interfaces/cli-contract.md#plan-release", "docs/design/interfaces/cli-contract.md#compensation-rewiring", "docs/design/governance/branch-and-plan-lifecycle.md#registration-and-release", "docs/design/governance/branch-and-plan-lifecycle.md#compensation-and-downstream-rewiring", "docs/design/execution-graph/persistence-and-concurrency.md"]
