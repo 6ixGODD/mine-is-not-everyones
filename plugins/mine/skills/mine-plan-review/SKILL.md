@@ -8,6 +8,47 @@ description: Strictly review one implemented repository plan against AGENTS.md, 
 MINE Is Not Everyone's. Act as an independent acceptance reviewer, not as the implementing agent's advocate. Try to falsify the implementation's claims. Accept only
 when the plan's actual contract is demonstrated end to end.
 
+## Integration: MCP tools and CLI fallback
+
+`mine-plan-review` queries and transitions plan state through two paths, in
+this order of preference:
+
+1. **MCP tools (preferred)** - when the current Agent runtime exposes the
+   MINE MCP server (`mine mcp serve`), call the typed MCP tools. They return
+   the same DTOs as the JSON CLI and never touch the execution-graph files.
+2. **JSON CLI (deterministic fallback)** - when MCP is unavailable, call
+   `mine --format json` commands. Never parse human output.
+
+Never invent an MCP tool, CLI command, flag, JSON field, or lifecycle
+transition that the current binary does not expose. Never edit
+`docs/plan/execution-graph.toml` or `docs/plan/execution-graph.md` directly.
+
+The accepted MCP tools `mine-plan-review` may use:
+
+- `mine_graph_status` (no arguments) - read the current revision.
+- `mine_plan_show` (`id`) - read the target node, its predecessors, and status.
+- `mine_plan_accept` (`id`, `review`) - transition `IMPLEMENTED` -> `ACCEPTED`
+  and record the review report path.
+- `mine_plan_reject` (`id`, `reason`, `compensating_plan`) - transition
+  `IMPLEMENTED` -> `REJECTED` and register the compensating plan id.
+- `mine_graph_validate` (no arguments) - validate the graph after transitions.
+- `mine_design_validate` (no arguments) - confirm design references.
+
+Operations `mine-plan-review` needs that are intentionally **CLI-only** (no
+MCP tool exposes them, because they rewire downstream dependencies outside
+the single-node accept/reject path):
+
+- `mine plan rewire-compensation --id <rejected-plan-id> --format json` -
+  reroute downstream dependencies from a rejected plan onto its registered
+  compensating plan. There is **no MCP tool for rewiring**; after
+  `mine_plan_reject`, rewiring is a mandatory CLI fallback when downstream
+  nodes must be rerouted.
+- `mine plan release --id <id> --format json` - release a compensating plan
+  after it is registered (CLI only).
+
+When a required operation has no MCP tool, fall back to the JSON CLI and state
+the fallback explicitly.
+
 ## Resolve the review target
 
 Treat the invocation argument as exactly one immutable plan path:
@@ -25,8 +66,10 @@ path is supplied, ask for it before mutation.
 Read completely, in order:
 
 1. Root `AGENTS.md`.
-2. The architecture source named by `AGENTS.md`.
-3. Query the target node and graph revision through `mine_plan_get` / `mine_graph_status` or JSON CLI; use the generated Markdown only as a readable view.
+2. The design knowledge base rooted at `docs/design/index.md` (and the relevant leaves named by `AGENTS.md`).
+3. Query the target node and graph revision through `mine_plan_show` (MCP) or `mine plan show --id <id> --format json` (CLI fallback), and `mine_graph_status` (MCP) or `mine graph status --format json` (CLI fallback); use the generated Markdown only as a readable view.
+
+Every reviewer-initiated transition of graph state must go through the accepted MINE CLI (`mine plan accept` / `mine plan reject` with `--format json`); never edit `docs/plan/execution-graph.toml` or `docs/plan/execution-graph.md` directly (`AGENTS.md` documents this rule; the bootstrap exception has ended).
 4. The target plan.
 5. Every hard-predecessor acceptance report and referenced commit.
 6. The target implementation report, implementation commits, diff from its accepted baseline, and suggested downstream consumer plan.
@@ -132,7 +175,7 @@ Then:
 
 1. Create a separate review report under `docs/plan/reports/<plan-name>-review.md` rather than overwriting implementation evidence.
 2. Record inspected commits, traceability matrix, independent commands/results, reviewer fixes and remaining non-blocking risks.
-3. Call `mine_plan_accept` or the final `mine plan accept --format json` command with the review report and expected revision; MINE releases eligible downstream nodes.
+3. Call `mine plan accept --id <id> --review <review report path> --format json` (MCP: `mine_plan_accept` with `id` and `review`); the accepted MINE CLI and MCP tool read the current revision under the lock, transitions `IMPLEMENTED`→`ACCEPTED`, records the review report, and (when combined with the released status) releases eligible downstream `BLOCKED`→`READY` successors whose hard predecessors are all now accepted. The envelope reports `revision_before`/`revision_after`.
 4. Stage explicit review files only and commit with `docs: accept Plan NN ...`.
 5. Verify the commit and state that no worktree merge is required.
 
@@ -142,8 +185,8 @@ For a material failure:
 
 1. Do not edit the immutable target plan or rewrite its implementation report/history.
 2. Create `docs/plan/reports/<plan-name>-review.md` with `REJECTED`, exact findings, commands, evidence and affected downstream nodes.
-3. Call `mine_plan_reject` or the final JSON CLI equivalent with the review report, rejection reason, expected revision, and compensating-plan relationship; MINE keeps downstream nodes blocked.
-4. Update the architecture source first with corrected target behavior and verified failure evidence.
+3. Call `mine plan reject --id <id> --reason <rejection summary> --compensating-plan <comp-id> --format json` (MCP: `mine_plan_reject` with `id`, `reason`, `compensating_plan`); the accepted MINE CLI and MCP tool transition `IMPLEMENTED`→`REJECTED`, records the `rejection_reason` and `compensating_plan`, reads the current revision under the lock, and emits `revision_before`/`revision_after`. Downstream nodes stay blocked; rerouting of the downstream edge to the compensation node is done when the compensation plan is registered (`mine plan add --hard <comp-id>`, CLI only) and then rewired (`mine plan rewire-compensation --id <rejected-id> --format json`, CLI only - no MCP tool).
+4. Update the `docs/design/` knowledge base first with corrected target behavior and verified failure evidence.
 5. Create the repository's next compensating plan number/name (for example `02-1-...`) that identifies the rejected implementation and
    changes target code directly—no alias, shim or migration solely to preserve the rejected behavior.
 6. Give the compensation node hard predecessors, deliverables, concrete steps, verification, acceptance criteria and graph edges. Route

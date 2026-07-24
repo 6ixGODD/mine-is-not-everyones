@@ -7,11 +7,11 @@
 
 ## User-visible outcome
 
-## Governing architecture references
-- `docs/design/architecture-and-detailed-design.md#...`
+## Governing design references
+- `docs/design/<area>/<leaf>.md#<anchor>` (cite exact design leaves and anchors under `docs/design/` — progressive disclosure rooted at `docs/design/index.md`; MINE owns `docs/design/`)
 
 ## Requirements traceability
-| Requirement | Architecture section | Work package | Acceptance evidence |
+| Requirement | Design leaf/anchor | Work package | Acceptance evidence |
 |---|---|---|---|
 
 ## Current evidence and baseline

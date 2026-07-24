@@ -19,6 +19,8 @@
     ]
   },
   "scripts": {
-    "verify": "python scripts/verify.py"
+    "verify": "python scripts/verify.py",
+    "sync": "python scripts/sync-plugin-assets.py",
+    "sync:check": "python scripts/sync-plugin-assets.py --check"
   }
 }

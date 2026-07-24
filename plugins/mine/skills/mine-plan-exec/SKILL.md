@@ -8,6 +8,45 @@ description: Execute one repository implementation plan end to end in the curren
 MINE Is Not Everyone's. Treat the supplied plan as an immutable execution contract. Implement it in the current working tree, verify it, report it, and leave the
 current branch ready for review. Do not merely describe the work.
 
+## Integration: MCP tools and CLI fallback
+
+`mine-plan-exec` queries and transitions plan state through two paths, in this
+order of preference:
+
+1. **MCP tools (preferred)** - when the current Agent runtime exposes the
+   MINE MCP server (`mine mcp serve`), call the typed MCP tools. They return
+   the same DTOs as the JSON CLI and never touch the execution-graph files.
+2. **JSON CLI (deterministic fallback)** - when MCP is unavailable, call
+   `mine --format json` commands. Never parse human output.
+
+Never invent an MCP tool, CLI command, flag, JSON field, or lifecycle
+transition that the current binary does not expose. Never edit
+`docs/plan/execution-graph.toml` or `docs/plan/execution-graph.md` directly.
+
+The accepted MCP tools `mine-plan-exec` may use:
+
+- `mine_graph_status` (no arguments) - read the current revision (carry
+  `data.revision` as `expected_revision` before mutating).
+- `mine_plan_show` (`id`) - read the target node and verify it is `READY` or
+  already `IN_PROGRESS` for this implementation.
+- `mine_plan_start` (`id`, `owner`?, `run_id`?) - transition `READY` ->
+  `IN_PROGRESS` before any production-file edit.
+- `mine_plan_mark_implemented` (`id`, `report`, `commits`) - record the
+  implementation report and commit evidence (`IMPLEMENTED` status).
+- `mine_graph_validate` (no arguments) - validate the graph after transitions.
+
+Operations `mine-plan-exec` needs that are intentionally **CLI-only** (no MCP
+tool exposes them):
+
+- `mine plan release --id <id> --format json` - if a predecessor was just
+  accepted and the target node is still `BLOCKED`, release is the gate into
+  `READY`. There is no MCP tool for release; it is a CLI fallback. (Normally
+  `mine-plan-create` or `mine-plan-review` performs release; `mine-plan-exec`
+  only does so when explicitly authorized to advance a just-unblocked node.)
+
+When a required operation has no MCP tool, fall back to the JSON CLI and state
+the fallback explicitly.
+
 ## Resolve the requested plan
 
 1. Read the invocation argument as the plan path. Accept Claude Code forms such as:
@@ -26,8 +65,8 @@ current branch ready for review. Do not merely describe the work.
 Before modifying anything, locate the repository root and read these sources completely in this order:
 
 1. Root `AGENTS.md`.
-2. The architecture source named by `AGENTS.md`.
-3. Query the plan and graph through `mine_plan_get` / `mine_graph_status` or JSON CLI; use `docs/plan/execution-graph.md` only as a generated readable view.
+2. The design knowledge base rooted at `docs/design/index.md` (and the relevant leaves named by `AGENTS.md`).
+3. Query the plan and graph through `mine_plan_show` (MCP) or `mine plan show --id <id> --format json` (CLI fallback), and `mine_graph_status` (MCP) or `mine graph status --format json` (CLI fallback); use `docs/plan/execution-graph.md` only as a generated readable view.
 4. The requested plan.
 5. `docs/plan/parallel-execution-protocol.md` when the plan declares a parallel lane.
 6. Every hard-predecessor acceptance report and the commits named by those reports.
@@ -74,7 +113,7 @@ Before editing, inspect `git status --short`, the current branch, and staged cha
 Dirty status alone is not a blocker. Shared files are a blocker only when existing edits overlap the plan and cannot be preserved or
 integrated safely. Stage explicit paths only; never use `git add .` or `git add -A` in a dirty workspace.
 
-Before editing production files, read the current revision and call `mine_plan_start` or the final `mine plan start --format json` command with the plan owner and `expected_revision`. Proceed only after MINE returns `IN_PROGRESS`. Never edit either execution-graph file directly. For parallel lanes, MINE remains the serialized status owner and the plan's path ownership rules remain mandatory.
+Before editing production files, read the current revision: call `mine_graph_status` (MCP) or `mine graph status --format json` (CLI fallback) (carry `data.revision` as `expected_revision`) and start the plan: call `mine_plan_start` (MCP) with `id`, `owner`, `run_id`; or `mine plan start --id <id> --owner <owner> --run-id <run> --format json` (CLI fallback). Proceed only after MINE returns `IN_PROGRESS` (exit 0). The accepted MINE CLI and MCP tools read the current revision under the lock themselves; they emit `revision_before`/`revision_after` in the envelope. Never edit either execution-graph file directly. For parallel lanes, MINE remains the serialized status owner and the plan's path ownership rules remain mandatory.
 
 For a parallel lane, obey its exclusive write paths and read-only dependencies exactly. Do not edit reserved shared files, even to register
 an import, CLI command, dependency, or fixture; record those needs as integration requests for the final integration plan. Never run two
@@ -154,8 +193,7 @@ Set the implementation report conclusion to:
 - `IN_PROGRESS` when required in-scope work remains;
 - never `ACCEPTED` merely because the implementing agent wrote the report.
 
-`ACCEPTED` requires the reviewer process defined by `AGENTS.md`. After committing the implementation and report, call `mine_plan_mark_implemented` (or the final JSON CLI equivalent) with the report, commits, and expected revision. The reviewer later performs the accept/reject transition through MINE.
-Do not release downstream plans while the node is only `IMPLEMENTED`.
+`ACCEPTED` requires the reviewer process defined by `AGENTS.md`. After committing the implementation and report, record the implementation evidence: call `mine_plan_mark_implemented` (MCP) with `id`, `report`, `commits`; or `mine plan implemented --id <id> --report <report path> --commit <hash> --format json` (CLI fallback) (repeat `--commit` for each implementation commit) - the accepted MINE CLI and MCP tool read the current revision under the lock and emit `revision_before`/`revision_after`. The reviewer later performs the accept/reject transition through MINE. Do not release downstream plans while the node is only `IMPLEMENTED`.
 
 Commit the report and, only when owned, final graph status using explicit paths. Parallel lane agents never stage the graph. Verify the resulting commit and confirm the assigned branch contains every implementation/report commit. For a non-parallel plan, no hidden merge step may remain. For a parallel lane, report the exact branch/worktree, commits, and declared join artifact required by the integration owner; do not merge it yourself unless the plan assigns integration ownership.
 
