@@ -7,7 +7,7 @@
 - Workspace: `bootstrap-mine-v1`
 - Stable branch: `master`
 - Integration branch: `dev`
-- Revision: `22`
+- Revision: `23`
 
 | Plan | Title | Status | Hard predecessors |
 |---|---|---|---|
@@ -22,9 +22,10 @@
 | 08 | Release, bootstrap, mine-sync, and self-hosting | BLOCKED | 07 |
 | 05-1 | MCP server official-SDK and scope correction (compensation for rejected Plan 05) | DRAFT | 03 |
 | 09 | Execution-graph compensation rewiring (CLI-managed) | REJECTED | 03 |
+| 09-1 | Plan release and compensation rewiring (compensation for rejected Plan 09) | DRAFT | 03 |
 
 ## Topology
 
 ```text
-01 -> 02 -> 02-1 -> 03 -> 04 -> 05 -> 05-1 -> 09 -> 06 -> 07 -> 08
+01 -> 02 -> 02-1 -> 03 -> 04 -> 05 -> 05-1 -> 09 -> 09-1 -> 06 -> 07 -> 08
 ```
