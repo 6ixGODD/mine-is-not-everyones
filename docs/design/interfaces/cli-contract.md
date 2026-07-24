@@ -20,7 +20,7 @@ mine status
 mine doctor
 mine workspace open|status|close
 mine graph validate|render|status|ready|wave|show
-mine plan add|show|start|implemented|accept|reject
+mine plan add|show|start|implemented|accept|reject|rewire-compensation
 mine design backup|validate|status
 mine repository version show|suggest|set
 mine agent config|install|uninstall|status
@@ -100,6 +100,53 @@ Errors use the same envelope with `ok: false`, stable `error.code`, human messag
 - `1`: unexpected internal failure.
 
 Exact values become public contract when released.
+
+## Compensation rewiring
+
+`mine plan rewire-compensation --id <rejected-plan-id>` reroutes downstream
+dependencies from an explicitly rejected plan onto its registered compensating
+plan. It is the deterministic, CLI-managed closure of `mine plan reject` (which
+set `compensating_plan`), and the only supported rerouting path after the
+bootstrap exception ended. See
+`docs/design/execution-graph/state-machine-and-algorithms.md#compensation-rewiring`
+for the full algorithm and preconditions.
+
+- The single input flag is `--id` (the rejected plan id). The replacement is
+derived from the rejected plan's `compensating_plan`; the caller never supplies
+it, so substitution can never be triggered by a similar id.
+- Rewiring goes through the shared application/persistence transaction
+  (`lock -> reload -> revision check -> semantic validation -> mutation ->
+  atomic write -> deterministic render`); the graph TOML and its generated
+  Markdown change atomically from the caller's perspective.
+- It verifies the original is `REJECTED`, `compensating_plan` names an existing
+  non-rejected replacement, every affected successor is still mutable
+  (`DRAFT`/`BLOCKED`/`READY`), no cycle is introduced, and unrelated predecessors
+  and successors are unchanged.
+- Repeating a completed rewiring is safe idempotent success: it writes
+  nothing, bumps no revision, and returns `affected_successors: []`.
+- It never weakens the immutability of accepted or active plans: successors in
+  `IN_PROGRESS`/`IMPLEMENTED`/`ACCEPTED`/`REJECTED` are never touched.
+
+### Result envelope
+
+```json
+{
+  "ok": true,
+  "command": "plan.rewire-compensation",
+  "revision_before": 17,
+  "revision_after": 18,
+  "data": {
+    "rejected_plan": "05",
+    "compensating_plan": "05-1",
+    "affected_successors": ["06"]
+  },
+  "warnings": []
+}
+```
+
+Errors reuse the stable `MINE_*` codes; rewiring-specific failures use
+`MINE_REWIRE_SUCCESSOR_LOCKED` and the existing `MINE_GRAPH_CYCLE`. No
+arbitrary graph-editing CLI is introduced.
 
 ## Design validation
 

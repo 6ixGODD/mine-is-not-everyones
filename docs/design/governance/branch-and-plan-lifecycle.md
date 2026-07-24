@@ -59,6 +59,31 @@ The first model-driven action is invoked explicitly by the user:
 - `mine-arch` for requirement-first design;
 - `mine-sync` for code-first onboarding or reconciliation.
 
+## Compensation and downstream rewiring
+
+When a plan is rejected (`mine plan reject --compensating-plan <id>`), closing
+the rejection has two independent, CLI-managed steps. **Neither edits the
+execution graph by hand**; the bootstrap exception that allowed manual
+rerouting (e.g. Plan `02` -> `02-1` during bootstrap) has ended.
+
+1. **Register the compensating plan** with `mine plan add`, whose hard
+   predecessor is the rejected plan's accepted upstream (not the rejected
+   plan itself).
+2. **Rewire downstream successors** off the rejected plan onto the
+   compensating plan with
+   `mine plan rewire-compensation --id <rejected-plan-id>`
+   (see
+   `docs/design/execution-graph/state-machine-and-algorithms.md#compensation-rewiring`).
+   The replacement is derived from the rejected plan's `compensating_plan`
+   field; the caller never supplies a replacement, so no similar-id
+   substitution can occur.
+
+A rejected plan is terminal; it is not revived or re-statused. Accepted and
+active successors (`IN_PROGRESS`/`IMPLEMENTED`/`ACCEPTED`/`REJECTED`) are
+never rewritten by compensation rewiring, preserving their immutability.
+Downstream work that depended on the rejected plan may only resume after the
+rewiring is accepted into `dev` and the compensating plan is itself accepted.
+
 ## Plan workspace creation
 
 `mine-plan-create` ensures `dev` exists, switches to it, and opens an internal plan workspace when absent.
