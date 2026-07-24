@@ -1,5 +1,5 @@
 schema_version = 1
-revision = 17
+revision = 18
 project_id = "mine-is-not-everyones"
 workspace_id = "bootstrap-mine-v1"
 stable_branch = "master"
@@ -207,6 +207,27 @@ hard_predecessors = ["03"]
 soft_predecessors = []
 design_references = ["docs/design/interfaces/mcp-contract.md", "docs/design/system/component-architecture.md", "docs/design/operations/configuration-security-observability.md"]
 exclusive_write_paths = ["src/mcp/", "tests/mcp/", "Cargo.toml", "Cargo.lock", "src/application/graph_service.rs", "src/application/plan_service.rs", "src/application/design_service.rs", "src/application/mod.rs", "src/cli/commands.rs", "src/lib.rs", "src/main.rs"]
+read_only_paths = []
+reserved_shared_paths = []
+implementation_report = ""
+review_report = ""
+implementation_commits = []
+owner = ""
+run_id = ""
+started_at = ""
+updated_at = ""
+rejection_reason = ""
+compensating_plan = ""
+
+[[plans]]
+id = "09"
+path = "docs/plan/09-execution-graph-compensation-rewiring.md"
+title = "Execution-graph compensation rewiring (CLI-managed)"
+status = "DRAFT"
+hard_predecessors = ["03"]
+soft_predecessors = []
+design_references = ["docs/design/execution-graph/state-machine-and-algorithms.md#compensation-rewiring", "docs/design/interfaces/cli-contract.md#compensation-rewiring", "docs/design/governance/branch-and-plan-lifecycle.md#compensation-and-downstream-rewiring", "docs/design/execution-graph/domain-model.md", "docs/design/execution-graph/persistence-and-concurrency.md", "docs/design/system/component-architecture.md"]
+exclusive_write_paths = ["src/domain/rewire.rs", "src/domain/mod.rs", "src/domain/error.rs", "src/output/mod.rs", "src/cli/commands.rs", "src/cli/mod.rs", "tests/rewire.rs", "tests/domain.rs", "tests/cli.rs"]
 read_only_paths = []
 reserved_shared_paths = []
 implementation_report = ""
