@@ -91,7 +91,6 @@ pub fn rewire_compensation(
         if p.id == rejected_id || p.id == comp {
             continue;
         }
-        references(p, rejected_id);
         if references(p, rejected_id) {
             if !is_mutable(p.status) {
                 return Err(MineError::RewireSuccessorLocked {
