@@ -1,13 +1,14 @@
 // Enforce no `unsafe` in MINE-owned test crates.
 #![forbid(unsafe_code)]
 
-//! `mine plan release --id` integration tests (Plan 09).
+//! `mine plan release --id` integration tests (Plan 09-1).
 //!
 //! Drives the CLI over isolated temp repos seeded with controlled graphs; the
 //! live repository graph is snapshotted before/after and asserted unchanged.
 
 mod common;
 
+use mine::cli;
 use mine::domain::status::PlanStatus;
 use mine::infrastructure::toml_store::TomlStore;
 
@@ -215,6 +216,77 @@ fn release_rejects_rejected_plan_others_unchanged() {
     assert_eq!(env["error"]["code"], "MINE_INVALID_TRANSITION");
     let after = std::fs::read(repo.join("docs/plan/execution-graph.toml")).unwrap();
     assert_eq!(before, after);
+    assert_live_unchanged(&live);
+}
+
+/// Two concurrent `mine plan release --id` invocations against the same
+/// isolated temp repo must be resolved by the shared `save_with_revision`
+/// optimistic-concurrency check: exactly one wins (revision bumps +1), the
+/// other gets `MINE_REVISION_CONFLICT`, and neither silently overwrites the
+/// graph. This is the dedicated stale/revision-conflict test required by the
+/// Plan 09-1 review for the new mutation command.
+#[test]
+fn concurrent_release_is_resolved_by_revision_conflict() {
+    let live = live_graph_bytes();
+    let (_tmp, repo) = seeded_repo(vec![node("09-1", PlanStatus::Draft, &[], &[])]);
+    let n = load_graph(&repo).revision; // pre-mutation revision both readers observe
+    let repo_str = repo.to_str().unwrap().to_string();
+    let repo_a = repo_str.clone();
+    let repo_b = repo_str.clone();
+    let handle_a = std::thread::spawn(move || {
+        cli::dispatch(
+            &common::run(
+                &repo_a,
+                &["plan", "release", "--id", "09-1", "--format", "json"],
+            ),
+            "mine",
+        )
+    });
+    let handle_b = std::thread::spawn(move || {
+        cli::dispatch(
+            &common::run(
+                &repo_b,
+                &["plan", "release", "--id", "09-1", "--format", "json"],
+            ),
+            "mine",
+        )
+    });
+    let out_a = handle_a.join().unwrap();
+    let out_b = handle_b.join().unwrap();
+
+    let env_a = common::envelope_json(&out_a);
+    let env_b = common::envelope_json(&out_b);
+
+    let ok_a = out_a.exit_code == 0 && env_a["ok"] == true;
+    let ok_b = out_b.exit_code == 0 && env_b["ok"] == true;
+    // Exactly one of the two won.
+    assert!(ok_a ^ ok_b, "exactly one release won: a={ok_a} b={ok_b}");
+
+    // The loser failed with a revision conflict (exit 5).
+    let (loser_env, winner_env) = if ok_a {
+        (&env_b, &env_a)
+    } else {
+        (&env_a, &env_b)
+    };
+    assert_eq!(loser_env["ok"], false);
+    assert_eq!(loser_env["error"]["code"], "MINE_REVISION_CONFLICT");
+
+    // The serial winner bumped the revision by exactly +1 over the pre-mutation
+    // revision `n` (which both writers read before either acquired the lock).
+    let ws = load_graph(&repo);
+    assert_eq!(ws.get("09-1").unwrap().status, PlanStatus::Ready);
+    assert_eq!(
+        ws.revision,
+        n + 1,
+        "exactly one revision bump, no silent double/lost write"
+    );
+    assert_eq!(
+        winner_env["revision_before"].as_u64().unwrap(),
+        n,
+        "winner read the same pre-mutation revision as the seeded graph"
+    );
+    // The loser made no observable change and did not overwrite the winner.
+    assert_eq!(loser_env["error"]["code"], "MINE_REVISION_CONFLICT");
     assert_live_unchanged(&live);
 }
 
