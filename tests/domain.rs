@@ -73,15 +73,28 @@ fn full_lifecycle_transitions_allowed() -> Result<(), MineError> {
 
 #[test]
 fn reject_path_requires_review_then_compensation() -> Result<(), MineError> {
-    // IMPLEMENTED -> REJECTED -> BLOCKED (after compensation)
+    // IMPLEMENTED -> REJECTED. REJECTED is terminal: compensation is closed
+    // by registering a compensating plan (mine plan add) and rewiring
+    // downstream successors (mine plan rewire-compensation), NOT by a status
+    // transition. The earlier REJECTED -> BLOCKED edge is removed as dead
+    // historical baggage (no operation performs it).
     PlanStatus::Implemented.validate_transition("01", PlanStatus::Rejected)?;
-    PlanStatus::Rejected.validate_transition("01", PlanStatus::Blocked)?;
-    // REJECTED may NOT directly return to READY.
-    assert!(
-        PlanStatus::Rejected
-            .validate_transition("01", PlanStatus::Ready)
-            .is_err()
-    );
+    // REJECTED may NOT transition to BLOCKED, READY, or any other state.
+    for target in [
+        PlanStatus::Blocked,
+        PlanStatus::Ready,
+        PlanStatus::InProgress,
+        PlanStatus::Implemented,
+        PlanStatus::Accepted,
+        PlanStatus::Draft,
+    ] {
+        assert!(
+            PlanStatus::Rejected
+                .validate_transition("01", target)
+                .is_err(),
+            "REJECTED -> {target:?} must be rejected (terminal)"
+        );
+    }
     Ok(())
 }
 

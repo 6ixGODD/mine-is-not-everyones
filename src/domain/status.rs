@@ -68,7 +68,6 @@ impl PlanStatus {
             (Self::InProgress, Self::Implemented) => true,
             (Self::Implemented, Self::Accepted) => true,
             (Self::Implemented, Self::Rejected) => true,
-            (Self::Rejected, Self::Blocked) => true,
             // Idempotent no-op: same status is allowed (re-validate without
             // state change), useful for re-running start on the same owner.
             (a, b) if a == b => true,
@@ -121,7 +120,6 @@ mod tests {
         PlanStatus::InProgress.validate_transition("02", PlanStatus::Implemented)?;
         PlanStatus::Implemented.validate_transition("02", PlanStatus::Accepted)?;
         PlanStatus::Implemented.validate_transition("02", PlanStatus::Rejected)?;
-        PlanStatus::Rejected.validate_transition("02", PlanStatus::Blocked)?;
         PlanStatus::Blocked.validate_transition("02", PlanStatus::Ready)?;
         PlanStatus::Draft.validate_transition("02", PlanStatus::Ready)?;
         PlanStatus::Draft.validate_transition("02", PlanStatus::Blocked)?;

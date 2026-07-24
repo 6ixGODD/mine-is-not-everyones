@@ -221,6 +221,8 @@ fn command_name(group: &str, sub: &str) -> &'static str {
         ("plan", "implemented") => "plan.implemented",
         ("plan", "accept") => "plan.accept",
         ("plan", "reject") => "plan.reject",
+        ("plan", "release") => "plan.release",
+        ("plan", "rewire-compensation") => "plan.rewire-compensation",
         ("design", "backup") => "design.backup",
         ("design", "validate") => "design.validate",
         ("design", "status") => "design.status",

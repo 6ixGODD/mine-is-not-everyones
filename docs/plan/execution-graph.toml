@@ -1,5 +1,5 @@
 schema_version = 1
-revision = 22
+revision = 27
 project_id = "mine-is-not-everyones"
 workspace_id = "bootstrap-mine-v1"
 stable_branch = "master"
@@ -239,3 +239,24 @@ started_at = "2026-07-24T03:06:41.1162806Z"
 updated_at = "2026-07-24T04:27:12.5944956Z"
 rejection_reason = "Independent review REJECTED (governance, not correctness): Plan 09's own pre-review lifecycle (design amendments 8fe9ab4/8eff7df, plan-doc creation/amendment 336bbde/85faeeb, DRAFT registration 9567569, the break-glass release a074750, and critically the mine plan start READY->IN_PROGRESS transition fe93d7b) was committed directly to the shared dev integration branch instead of an ephemeral plan/09-* branch, before any independent review -- confirmed via git rev-parse dev == fe93d7b and its reflog showing eight consecutive plain commit entries, not a merge. This deviates from the precedent set by every prior plan (01-05), where the analogous start bookkeeping lived exclusively on that plan's own branch while dev remained untouched. The release_plan/rewire_compensation domain and CLI implementation itself is independently verified sound (185/185 tests, fmt/clippy clean, no arbitrary graph-edit API, no unsafe, exact design match) and should be ported forward largely unchanged by a compensating plan executed strictly on its own branch. See docs/plan/reports/09-execution-graph-compensation-rewiring-review.md for full evidence."
 compensating_plan = "09-1"
+
+[[plans]]
+id = "09-1"
+path = "docs/plan/09-1-plan-release-and-compensation-rewiring.md"
+title = "Plan release and compensation rewiring (compensation for rejected Plan 09)"
+status = "ACCEPTED"
+hard_predecessors = ["03"]
+soft_predecessors = []
+design_references = ["docs/design/execution-graph/state-machine-and-algorithms.md#plan-release", "docs/design/execution-graph/state-machine-and-algorithms.md#compensation-rewiring", "docs/design/interfaces/cli-contract.md#plan-release", "docs/design/interfaces/cli-contract.md#compensation-rewiring", "docs/design/governance/branch-and-plan-lifecycle.md#registration-and-release", "docs/design/governance/branch-and-plan-lifecycle.md#compensation-and-downstream-rewiring", "docs/design/execution-graph/persistence-and-concurrency.md"]
+exclusive_write_paths = ["src/domain/plan_release.rs", "src/domain/rewire.rs", "src/domain/mod.rs", "src/domain/error.rs", "src/domain/status.rs", "src/output/mod.rs", "src/cli/commands.rs", "src/cli/mod.rs", "tests/release.rs", "tests/rewire.rs", "tests/common/mod.rs", "tests/domain.rs"]
+read_only_paths = []
+reserved_shared_paths = []
+implementation_report = "docs/plan/reports/09-1-plan-release-and-compensation-rewiring-implementation.md"
+review_report = "docs/plan/reports/09-1-plan-release-and-compensation-rewiring-review.md"
+implementation_commits = ["6ad9f660d1996fba255c86e97d13001675cb1c1f", "888b3824614ac783b78119efbda920b13ddc0836", "33496be9b3a509fa7196b9f91847d1ef3c5e4306", "def594fe0e36337b4285b9e7091025b3e9367e2c", "ce126b682cf971880a5411b31013253fa2d99579"]
+owner = "plan-09-1"
+run_id = "plan-09-1-release-rewire"
+started_at = "2026-07-24T05:32:01.2412913Z"
+updated_at = "2026-07-24T06:03:39.8302392Z"
+rejection_reason = ""
+compensating_plan = ""

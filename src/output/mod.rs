@@ -53,7 +53,8 @@ pub fn exit_code_for(err: &MineError) -> i32 {
         | MineError::DesignOwnershipMismatch { .. }
         | MineError::DesignMarkerInvalid { .. }
         | MineError::RepositoryIdMismatch { .. }
-        | MineError::EvidenceMissing { .. } => exit_code::GATE,
+        | MineError::EvidenceMissing { .. }
+        | MineError::RewireSuccessorLocked { .. } => exit_code::GATE,
         // Configuration is treated as a validation gate (the source of truth
         // is present but invalid).
         MineError::ConfigInvalid { .. } => exit_code::VALIDATION,
@@ -106,6 +107,14 @@ mod tests {
             exit_code_for(&MineError::EvidenceMissing {
                 plan_id: "03".into(),
                 detail: "no report".into()
+            }),
+            exit_code::GATE
+        );
+        assert_eq!(
+            exit_code_for(&MineError::RewireSuccessorLocked {
+                plan_id: "05".into(),
+                successor_id: "06".into(),
+                successor_status: "IN_PROGRESS".into()
             }),
             exit_code::GATE
         );

@@ -72,6 +72,8 @@ pub fn handle(
             "implemented" => plan_implemented(parsed, rest),
             "accept" => plan_accept(parsed, rest),
             "reject" => plan_reject(parsed, rest),
+            "release" => plan_release(parsed, rest),
+            "rewire-compensation" => plan_rewire_compensation(parsed, rest),
             _ => Err(HandlerError::usage(format!(
                 "unknown plan subcommand {sub:?}"
             ))),
@@ -927,6 +929,111 @@ fn plan_reject(parsed: &crate::cli::ParsedArgs, rest: &[String]) -> HandlerResul
     let lines = vec![HumanLine::Field {
         key: "  rejected".to_string(),
         value: id_for_env,
+    }];
+    Ok((env, lines))
+}
+
+// ----------------------------------------------------------------------------
+// plan release and compensation rewiring
+// ----------------------------------------------------------------------------
+
+/// `mine plan release --id <id>`: the explicit gate that moves a DRAFT plan
+/// into the startable frontier (READY when every hard predecessor is
+/// ACCEPTED, else BLOCKED). See
+/// `docs/design/execution-graph/state-machine-and-algorithms.md#plan-release`.
+fn plan_release(parsed: &crate::cli::ParsedArgs, rest: &[String]) -> HandlerResult {
+    let ctx = build_context(&parsed.global).map_err(ctx_err)?;
+    let (flags, _pos) = parse_flags(rest);
+    let id = flag(&flags, "id")
+        .ok_or_else(|| HandlerError::usage("plan release requires --id"))?
+        .to_string();
+    let now = SystemClock.now_utc_rfc3339();
+
+    let expected = ctx.store.load().map_err(ctx_err)?.revision;
+    let id_for_env = id.clone();
+    let saved = save_with_revision(&ctx, expected, move |mut w| {
+        let before = w
+            .get(&id)
+            .map(|n| n.status)
+            .ok_or_else(|| MineError::PlanNotFound {
+                plan_id: id.clone(),
+            })?;
+        crate::domain::plan_release::release_plan(&mut w, &id, &now)?;
+        // release always transitions DRAFT -> READY|BLOCKED on success, so the
+        // revision always bumps exactly once.
+        let _ = before;
+        w.revision = expected + 1;
+        Ok(w)
+    })?;
+
+    let node = saved.get(&id_for_env).expect("present in saved ws");
+    let status_after = node.status;
+    let hard = node.hard_predecessors.clone();
+    let unsatisfied = crate::domain::plan_release::unsatisfied_predecessors(&saved, &id_for_env)
+        .unwrap_or_default();
+    let env = envelope_for("plan.release", Some(&ctx.repo_root))
+        .with_workspace_id(saved.workspace_id.clone())
+        .with_revision(expected, saved.revision)
+        .with_data(json!({
+            "plan": id_for_env,
+            "status_before": "DRAFT",
+            "status_after": status_after.as_str(),
+            "hard_predecessors": hard,
+            "unsatisfied_predecessors": unsatisfied,
+        }));
+    let lines = vec![HumanLine::Field {
+        key: "  released".to_string(),
+        value: format!("{} -> {}", id_for_env, status_after.as_str()),
+    }];
+    Ok((env, lines))
+}
+
+/// `mine plan rewire-compensation --id <rejected-id>`: reroutes a rejected
+/// plan's downstream dependencies onto its registered compensating plan. See
+/// `docs/design/execution-graph/state-machine-and-algorithms.md#compensation-rewiring`.
+fn plan_rewire_compensation(parsed: &crate::cli::ParsedArgs, rest: &[String]) -> HandlerResult {
+    let ctx = build_context(&parsed.global).map_err(ctx_err)?;
+    let (flags, _pos) = parse_flags(rest);
+    let id = flag(&flags, "id")
+        .ok_or_else(|| HandlerError::usage("plan rewire-compensation requires --id"))?
+        .to_string();
+    let now = SystemClock.now_utc_rfc3339();
+
+    let expected = ctx.store.load().map_err(ctx_err)?.revision;
+    let id_for_env = id.clone();
+    // Thread the affected-successor list and the compensating id out of the
+    // transaction closure for the result envelope.
+    let affected_cell = std::cell::RefCell::new(Vec::<String>::new());
+    let comp_cell = std::cell::RefCell::new(String::new());
+    let saved = save_with_revision(&ctx, expected, |mut w| {
+        let rejected = w.get(&id).ok_or_else(|| MineError::PlanNotFound {
+            plan_id: id.clone(),
+        })?;
+        let comp = rejected.compensating_plan.clone();
+        let affected = crate::domain::rewire::rewire_compensation(&mut w, &id, &now)?;
+        // Bump revision only on a real mutation; on the idempotent no-op path
+        // (affected empty) the workspace is unchanged and the store rewrites
+        // byte-identical TOML/MD with revision unchanged.
+        if !affected.is_empty() {
+            w.revision = expected + 1;
+        }
+        *affected_cell.borrow_mut() = affected;
+        *comp_cell.borrow_mut() = comp;
+        Ok(w)
+    })?;
+    let affected = affected_cell.into_inner();
+    let comp = comp_cell.into_inner();
+    let env = envelope_for("plan.rewire-compensation", Some(&ctx.repo_root))
+        .with_workspace_id(saved.workspace_id.clone())
+        .with_revision(expected, saved.revision)
+        .with_data(json!({
+            "rejected_plan": id_for_env,
+            "compensating_plan": comp,
+            "affected_successors": affected,
+        }));
+    let lines = vec![HumanLine::Field {
+        key: "  rewired".to_string(),
+        value: format!("{} -> {} (affected: {})", id_for_env, comp, affected.len()),
     }];
     Ok((env, lines))
 }

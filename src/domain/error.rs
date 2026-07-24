@@ -92,6 +92,18 @@ pub enum MineError {
         detail: String,
     },
 
+    /// Compensation rewiring refused because a downstream successor that
+    /// references a rejected plan is in an active, accepted, or terminal status
+    /// and must not be mutated.
+    #[error(
+        "rewire of plan {plan_id} refused: successor {successor_id} is not mutable (status: {successor_status})"
+    )]
+    RewireSuccessorLocked {
+        plan_id: String,
+        successor_id: String,
+        successor_status: String,
+    },
+
     /// The caller's `expected_revision` does not match the stored revision.
     #[error("revision conflict: expected revision {expected}, actual revision {actual}")]
     RevisionConflict { expected: u64, actual: u64 },
@@ -127,6 +139,7 @@ impl MineError {
             Self::InvalidTransition { .. } => "MINE_INVALID_TRANSITION",
             Self::PredecessorNotAccepted { .. } => "MINE_PREDECESSOR_NOT_ACCEPTED",
             Self::WriteScopeConflict { .. } => "MINE_WRITE_SCOPE_CONFLICT",
+            Self::RewireSuccessorLocked { .. } => "MINE_REWIRE_SUCCESSOR_LOCKED",
             Self::RevisionConflict { .. } => "MINE_REVISION_CONFLICT",
             Self::LockTimeout { .. } => "MINE_LOCK_TIMEOUT",
             Self::EvidenceMissing { .. } => "MINE_EVIDENCE_MISSING",
