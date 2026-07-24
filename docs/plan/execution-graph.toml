@@ -1,5 +1,5 @@
 schema_version = 1
-revision = 28
+revision = 29
 project_id = "mine-is-not-everyones"
 workspace_id = "bootstrap-mine-v1"
 stable_branch = "master"
@@ -202,7 +202,7 @@ compensating_plan = ""
 id = "05-1"
 path = "docs/plan/05-1-mcp-server-official-sdk-and-scope-correction.md"
 title = "MCP server official-SDK and scope correction (compensation for rejected Plan 05)"
-status = "DRAFT"
+status = "READY"
 hard_predecessors = ["03"]
 soft_predecessors = []
 design_references = ["docs/design/interfaces/mcp-contract.md", "docs/design/system/component-architecture.md", "docs/design/operations/configuration-security-observability.md"]
@@ -215,7 +215,7 @@ implementation_commits = []
 owner = ""
 run_id = ""
 started_at = ""
-updated_at = ""
+updated_at = "2026-07-24T06:04:58.0823004Z"
 rejection_reason = ""
 compensating_plan = ""
 
