@@ -7,7 +7,7 @@
 - Workspace: `bootstrap-mine-v1`
 - Stable branch: `master`
 - Integration branch: `dev`
-- Revision: `30`
+- Revision: `31`
 
 | Plan | Title | Status | Hard predecessors |
 |---|---|---|---|
@@ -20,7 +20,7 @@
 | 06 | Final Skill contract and plugin distribution | BLOCKED | 04, 05-1 |
 | 07 | Four-agent installer, managed state, and doctor | BLOCKED | 06 |
 | 08 | Release, bootstrap, mine-sync, and self-hosting | BLOCKED | 07 |
-| 05-1 | MCP server official-SDK and scope correction (compensation for rejected Plan 05) | IN_PROGRESS | 03 |
+| 05-1 | MCP server official-SDK and scope correction (compensation for rejected Plan 05) | IMPLEMENTED | 03 |
 | 09 | Execution-graph compensation rewiring (CLI-managed) | REJECTED | 03 |
 | 09-1 | Plan release and compensation rewiring (compensation for rejected Plan 09) | ACCEPTED | 03 |
 
