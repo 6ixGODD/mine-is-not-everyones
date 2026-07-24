@@ -20,7 +20,9 @@ Rewrite the five Skills against the final MCP and CLI contracts, build determini
 
 ## Hard predecessors
 
-04, 05
+04, 05-1
+
+(Rerouted from the rejected `05` to the compensating `05-1`; see `docs/plan/reports/05-stdio-mcp-server-and-typed-tools-review.md`. This plan has not started execution and is not yet touched by any implementation branch, so this predecessor-reference correction is a plan-document text correction only, not a graph-file edit — see that review report for why the corresponding `docs/plan/execution-graph.toml` field is not edited here.)
 
 ## Governing design references
 
