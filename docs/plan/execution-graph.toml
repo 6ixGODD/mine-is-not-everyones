@@ -1,5 +1,5 @@
 schema_version = 1
-revision = 18
+revision = 19
 project_id = "mine-is-not-everyones"
 workspace_id = "bootstrap-mine-v1"
 stable_branch = "master"
@@ -223,7 +223,7 @@ compensating_plan = ""
 id = "09"
 path = "docs/plan/09-execution-graph-compensation-rewiring.md"
 title = "Execution-graph compensation rewiring (CLI-managed)"
-status = "DRAFT"
+status = "READY"
 hard_predecessors = ["03"]
 soft_predecessors = []
 design_references = ["docs/design/execution-graph/state-machine-and-algorithms.md#compensation-rewiring", "docs/design/interfaces/cli-contract.md#compensation-rewiring", "docs/design/governance/branch-and-plan-lifecycle.md#compensation-and-downstream-rewiring", "docs/design/execution-graph/domain-model.md", "docs/design/execution-graph/persistence-and-concurrency.md", "docs/design/system/component-architecture.md"]
