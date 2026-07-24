@@ -9,6 +9,46 @@ Create an implementation-ready plan from requirements, current repository eviden
 
 A completed plan is an executable engineering contract, not a brainstorm, backlog, generic checklist, or restatement of the user's request. Make it precise enough that a weak implementation agent can execute it without inventing product decisions, interfaces, algorithms, file ownership, tests, or verification commands.
 
+## Integration: MCP tools and CLI fallback
+
+`mine-plan-create` registers and queries plans through two paths, in this
+order of preference:
+
+1. **MCP tools (preferred)** - when the current Agent runtime exposes the
+   MINE MCP server (`mine mcp serve`), call the typed MCP tools. They return
+   the same DTOs as the JSON CLI and never touch the execution-graph files.
+2. **JSON CLI (deterministic fallback)** - when MCP is unavailable, call
+   `mine --format json` commands. Never parse human output.
+
+Never invent an MCP tool, CLI command, flag, JSON field, or lifecycle
+transition that the current binary does not expose. Never edit
+`docs/plan/execution-graph.toml` or `docs/plan/execution-graph.md` directly.
+
+The accepted MCP tools `mine-plan-create` may use:
+
+- `mine_graph_status` (no arguments) - read the current revision, branches,
+  and plan count (carry `data.revision` as the expected revision on writes).
+- `mine_graph_validate` (no arguments) - validate the graph after registration.
+- `mine_graph_ready` (no arguments) - read the ready frontier.
+- `mine_plan_show` (`id`) - look up a plan node.
+- `mine_plan_add` (`id`, `path`, `title`, `design_references`,
+  `exclusive_write_paths`?, `hard_predecessors`?) - register a new `DRAFT`
+  plan node.
+- `mine_design_validate` (no arguments) - confirm design references resolve.
+
+Operations `mine-plan-create` needs that are intentionally **CLI-only** (no
+MCP tool exposes them, because they are release-gate transitions outside the
+registered-add path):
+
+- `mine plan release --id <id> --format json` - move a newly registered
+  `DRAFT` plan into the startable frontier (`DRAFT` -> `READY` or `BLOCKED`).
+  There is **no MCP tool for release**; `mine_plan_add` always creates `DRAFT`,
+  so release is a mandatory CLI fallback after registration.
+- `mine workspace open|close` - ephemeral plan-workspace lifecycle (CLI only).
+
+When a required operation has no MCP tool, fall back to the JSON CLI and state
+the fallback explicitly.
+
 ## Required repository artifacts
 
 Use these exact repository paths unless an existing repository convention is stricter:
@@ -249,12 +289,31 @@ Never label an unrun command, timeout, unavailable dependency, ignored diagnosti
 
 Do not edit `docs/plan/execution-graph.toml` or `docs/plan/execution-graph.md` directly. After the plan document is complete:
 
-1. Read the current graph revision using `mine graph status --format json` (the envelope's `data.revision` is the current revision; carry it as `expected_revision` on the write).
-2. Register the plan using `mine plan add --format json` with: `--id`, `--path`, `--title`, at least one `--design-ref`, and any `--write` (exclusive write paths) and `--hard` (hard predecessors) as needed. Repeat `--design-ref`/`--write`/`--hard` for multiple values.
-3. Run `mine graph validate --format json` after registration.
-4. Report the returned revision before/after and the new plan's status (`DRAFT` or the released status).
+1. Read the current graph revision: call `mine_graph_status` (MCP) or `mine
+   graph status --format json` (CLI fallback). The envelope's `data.revision`
+   is the current revision; carry it as `expected_revision` on the write.
+2. Register the plan: call `mine_plan_add` (MCP) with `id`, `path`, `title`,
+   `design_references`, and optional `exclusive_write_paths` /
+   `hard_predecessors`; or `mine plan add --format json` (CLI fallback) with
+   `--id`, `--path`, `--title`, at least one `--design-ref`, and any `--write`
+   / `--hard` (repeat for multiple values). Registration always creates a
+   `DRAFT` node.
+3. **Release the plan** (CLI-only - no MCP tool exposes release): call
+   `mine plan release --id <id> --format json` to move the new `DRAFT` node
+   into the startable frontier (`DRAFT` -> `READY` when every hard predecessor
+   is `ACCEPTED`; `DRAFT` -> `BLOCKED` otherwise). This is a mandatory CLI
+   fallback because `mine_plan_add` always creates `DRAFT`.
+4. Validate the graph: call `mine_graph_validate` (MCP) or `mine graph
+   validate --format json` (CLI fallback) after registration and release.
+5. Report the returned revision before/after and the new plan's status
+   (`DRAFT`, `READY`, or `BLOCKED`).
 
-The accepted MINE CLI reads the current revision itself before mutating under the lock, so an explicit `expected_revision` argument is **not** required; the CLI emits `revision_before`/`revision_after` in every mutation envelope. If a typed MCP bridge is later accepted, prefer it and fall back to `--format json` CLI. Never parse human output. Never edit the graph files directly. If the installed command contract differs from this draft, use the actual implemented contract and update this Skill before release.
+The accepted MINE CLI and MCP tools read the current revision themselves
+before mutating under the lock, so an explicit `expected_revision` argument is
+**not** required; every mutation envelope emits `revision_before`/
+`revision_after`. Never parse human output. Never edit the graph files
+directly. If the installed command contract differs from this draft, use the
+actual implemented contract and update this Skill before release.
 
 ## Final review gates
 

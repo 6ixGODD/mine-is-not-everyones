@@ -1,15 +1,18 @@
 // Enforce no `unsafe` in MINE-owned test crates.
 #![forbid(unsafe_code)]
 
-//! Skill contract tests for Plan 04.
+//! Skill contract tests for Plans 04 and 06.
 //!
-//! These statically assert the Plan 04 acceptance criteria against the
-//! Skills and the user guide, so a drifted Skill fails the gate rather than
-//! shipping a stale contract. They are parse/grep contract checks, not
-//! behavioral tests of the `mine` binary (the CLI is covered by `tests/cli.rs`).
+//! These statically assert the accepted Skill contract against the Skills and
+//! the user guide, so a drifted Skill fails the gate rather than shipping a
+//! stale contract. They are parse/grep contract checks, not behavioral tests of
+//! the `mine` binary (the CLI is covered by `tests/cli.rs`, the MCP server by
+//! `tests/mcp.rs`).
 //!
-//! Each test names the exact acceptance criterion from
-//! `docs/plan/04-skills-json-cli-mine-sync-and-design-lifecycle.md`.
+//! Plan 06 rewrote the Skills to be MCP-first / CLI-fallback against the twelve
+//! accepted MCP tools delivered by Plan 05-1. The tests below verify that every
+//! MCP tool name a Skill references exists in the accepted twelve-tool surface,
+//! and that no Skill invents an unimplemented CLI command.
 
 use std::path::{Path, PathBuf};
 
@@ -223,36 +226,96 @@ fn mine_arch_is_requirement_first() {
     );
 }
 
+/// The twelve accepted MCP tool names exposed by `mine mcp serve` (Plan 05-1).
+/// Every MCP tool name referenced by a Skill MUST be in this set.
+const ACCEPTED_MCP_TOOLS: &[&str] = &[
+    "mine_workspace_status",
+    "mine_graph_validate",
+    "mine_graph_status",
+    "mine_graph_ready",
+    "mine_graph_wave",
+    "mine_plan_show",
+    "mine_design_validate",
+    "mine_plan_add",
+    "mine_plan_start",
+    "mine_plan_mark_implemented",
+    "mine_plan_accept",
+    "mine_plan_reject",
+];
+
 #[test]
-fn planning_skills_use_real_cli_commands_not_mcp_placeholders() {
-    // The accepted MINE CLI is implemented (Plan 03). The skills must cite the
-    // real `mine plan ...` commands, not the placeholder snake_case MCP names.
+fn skills_reference_only_accepted_mcp_tools() {
+    // Plan 06: Skills are MCP-first / CLI-fallback. Every MCP tool name a Skill
+    // references must exist in the accepted twelve-tool surface (Plan 05-1).
+    // A stale or invented tool name fails the gate.
+    let accepted: std::collections::HashSet<&str> = ACCEPTED_MCP_TOOLS.iter().copied().collect();
+    for s in [
+        "mine-arch",
+        "mine-sync",
+        "mine-plan-create",
+        "mine-plan-exec",
+        "mine-plan-review",
+    ] {
+        let body = skill(s);
+        // Extract every mine_* token that looks like an MCP tool name.
+        let referenced: Vec<&str> = regex_mcp_tool_names(&body);
+        for tool in &referenced {
+            assert!(
+                accepted.contains(tool),
+                "{s} references MCP tool {tool:?} which is not in the accepted twelve-tool surface {:?}",
+                ACCEPTED_MCP_TOOLS
+            );
+        }
+    }
+}
+
+#[test]
+fn planning_skills_use_mcp_first_with_cli_fallback() {
+    // Plan 06: the three planning Skills must be MCP-first / CLI-fallback.
+    // Each must reference at least one accepted MCP tool AND the `mine` CLI.
     for s in ["mine-plan-create", "mine-plan-exec", "mine-plan-review"] {
         let body = skill(s);
+        let mcp_tools = regex_mcp_tool_names(&body);
         assert!(
-            !body.contains("mine_plan_add")
-                && !body.contains("mine_plan_start")
-                && !body.contains("mine_plan_get")
-                && !body.contains("mine_plan_mark_implemented")
-                && !body.contains("mine_plan_accept")
-                && !body.contains("mine_plan_reject")
-                && !body.contains("mine_graph_status")
-                && !body.contains("mine_graph_validate"),
-            "{s} must cite accepted `mine plan ...` / `mine graph ...` CLI commands, not placeholder MCP names"
+            !mcp_tools.is_empty(),
+            "{s} must reference at least one accepted MCP tool (MCP-first)"
         );
         assert!(
-            body.contains("mine plan ")
-                || body.contains("mine plan\n")
-                || body.contains("mine graph "),
-            "{s} must reference the accepted mine CLI"
+            body.contains("mine plan ") || body.contains("mine graph "),
+            "{s} must reference the `mine` CLI as a fallback"
+        );
+        assert!(
+            body.contains("CLI fallback"),
+            "{s} must document the CLI fallback explicitly"
         );
     }
+}
+
+/// Extracts candidate MCP tool names (`mine_<verb>_<noun>` snake_case tokens)
+/// from a Skill body, excluding prose that is clearly not a tool reference.
+fn regex_mcp_tool_names(body: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    for tok in body.split(|c: char| !c.is_alphanumeric() && c != '_') {
+        if tok.starts_with("mine_") && tok.contains('_') && tok.len() > 6 {
+            // Filter out non-tool snake_case tokens (e.g. mine_design_validate
+            // is a tool, but mine_code_version is not). Only accept tokens that
+            // match the accepted tool list exactly.
+            out.push(tok);
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
 }
 
 #[test]
 fn skills_do_not_invent_imaginary_cli_commands() {
     // The user guide explicitly lists only supported clients. Skills must
     // not reference commands that are not part of the accepted CLI contract.
+    // The actually-implemented CLI command groups (verified against the built
+    // binary). `mine agent` and `mine dist` are declared in the CLI contract
+    // design but NOT yet implemented, so Skills must not reference them as
+    // available commands.
     let accepted_cli = [
         "mine init",
         "mine status",
@@ -262,7 +325,6 @@ fn skills_do_not_invent_imaginary_cli_commands() {
         "mine plan",
         "mine design",
         "mine repository",
-        "mine dist",
         "mine mcp serve",
     ];
     let body = skill("mine-sync");
@@ -273,8 +335,7 @@ fn skills_do_not_invent_imaginary_cli_commands() {
             || body.contains("mine graph validate"),
         "mine-sync must reference accepted mine design/graph CLI commands"
     );
-    // Any CLI invocation "mine <x>" that is not in accepted_cli is suspicious.
-    // Catch the implausible `mine doctor --agents` form specifically.
+    // Skills must not reference unimplemented CLI groups as available commands.
     for s in [
         "mine-arch",
         "mine-sync",
@@ -290,6 +351,13 @@ fn skills_do_not_invent_imaginary_cli_commands() {
         assert!(
             !body.contains("mine doctor --agents all"),
             "{s} references an imaginary flag"
+        );
+        // `mine dist sync` / `mine dist verify` are not yet implemented; the
+        // sync mechanism is the scripts/sync-plugin-assets.py script, not a
+        // CLI command. Skills must not tell users to run `mine dist ...`.
+        assert!(
+            !body.contains("mine dist "),
+            "{s} must not reference unimplemented `mine dist` CLI group"
         );
     }
     // guide the linter to keep accepted_cli used

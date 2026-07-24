@@ -9,6 +9,7 @@
 
 pub mod atomic_write;
 pub mod design_backup;
+pub mod embedded_skills;
 pub mod file_lock;
 pub mod git;
 pub mod system;

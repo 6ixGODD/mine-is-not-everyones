@@ -1,6 +1,6 @@
 {
   "name": "mine",
-  "version": "0.0.0-dev",
+  "version": "0.1.0",
   "description": "MINE Is Not Everyone's.",
   "author": {
     "name": "BoChen SHEN"
@@ -10,7 +10,7 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "MINE",
-    "shortDescription": "MINE Is Not Everyone’s.",
+    "shortDescription": "MINE Is Not Everyone's.",
     "longDescription": "Personal architecture, executable planning, governed execution, and adversarial review for coding agents.",
     "developerName": "BoChen SHEN",
     "category": "Developer Tools",
