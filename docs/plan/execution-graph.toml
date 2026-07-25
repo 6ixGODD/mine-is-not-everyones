@@ -1,5 +1,5 @@
 schema_version = 1
-revision = 40
+revision = 43
 project_id = "mine-is-not-everyones"
 workspace_id = "bootstrap-mine-v1"
 stable_branch = "master"
@@ -160,7 +160,7 @@ compensating_plan = ""
 id = "07"
 path = "docs/plan/07-four-agent-installer-managed-state-and-doctor.md"
 title = "Four-agent installer, managed state, and doctor"
-status = "READY"
+status = "REJECTED"
 hard_predecessors = ["06"]
 soft_predecessors = []
 design_references = ["docs/design/integrations/distribution.md", "docs/design/operations/configuration-security-observability.md", "docs/design/operations/testing-release-and-recovery.md"]
@@ -169,13 +169,13 @@ read_only_paths = ["REQUIREMENTS.md", "docs/design/"]
 reserved_shared_paths = ["docs/plan/execution-graph.toml", "docs/plan/execution-graph.md"]
 implementation_report = "docs/plan/reports/07-four-agent-installer-managed-state-and-doctor-implementation.md"
 review_report = "docs/plan/reports/07-four-agent-installer-managed-state-and-doctor-review.md"
-implementation_commits = []
-owner = ""
-run_id = ""
-started_at = ""
-updated_at = "2026-07-24T16:19:05.6130358Z"
-rejection_reason = ""
-compensating_plan = ""
+implementation_commits = ["4f26cb2a7be384e2b282df72c8fe48c8b8a6373d", "7dfbd2ae0bfa416f7e58ac09f96cfb4a3036739a"]
+owner = "independent-reviewer"
+run_id = "plan-07-review-reject"
+started_at = "2026-07-25T09:02:33.4204628Z"
+updated_at = "2026-07-25T09:02:56.5083247Z"
+rejection_reason = "Independent review REJECTED: (1) the design-mandated 'backs up structured configuration before mutation' / 'backups before external configuration changes' requirement is completely unimplemented anywhere in src/agent_setup/ (zero matches for backup/snapshot); a normal default 'mine agent install codex' destructively rewrites ~/.codex/config.toml via a full toml::Value reparse/reserialize, dropping all comments/formatting, unconditionally, with no opt-in and no Plan authorization. (2) Reproduced end-to-end against the compiled binary: a failure between payload-write and managed-state-write (skills written first) leaves orphaned unrecorded files on disk; every subsequent install attempt then permanently fails with MINE_AGENT_COLLISION, with no force/repair/recovery path anywhere in the CLI. (3) agent_env()/real_env() unconditionally read the real process env vars CLAUDE_CONFIG_DIR/CODEX_HOME/PI_HOME/OPENCODE_CONFIG_DIR even when --config-root is explicitly supplied, only overriding config_root itself; this is the reproduced root cause of finding 2 and independently violates the required config-root isolation guarantee. SafetyGuard's filesystem-escape boundary is independently verified sound (including against a genuine Windows junction). See docs/plan/reports/07-four-agent-installer-managed-state-and-doctor-review.md for full evidence, adversarial reproduction steps, and compensating-plan recommendations."
+compensating_plan = "07-1"
 
 [[plans]]
 id = "08"
