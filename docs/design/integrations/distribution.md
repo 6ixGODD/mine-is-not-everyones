@@ -59,7 +59,85 @@ The installer:
 - preserves unrelated configuration;
 - refuses same-name conflicting entries unless forced;
 - validates actual Skill discovery where possible;
-- does not claim success merely because files were copied.
+- does not claim success merely because files were copied;
+- never reads real process environment variables (`CLAUDE_CONFIG_DIR`,
+  `CODEX_HOME`, `PI_HOME`, `OPENCODE_CONFIG_DIR`) when an explicit
+  `--config-root` is supplied.
+
+### Mandatory configuration backup before mutation
+
+Every structured external configuration file (an Agent's MCP settings file:
+  Claude Code `~/.claude.json`, Codex `~/.codex/config.toml`, OpenCode
+  `~/.config/opencode/opencode.json`; Pi has no MCP configuration) must be
+backed up before its first mutation by an install or update:
+
+- back up the **exact original bytes**, not a parsed/reserialized
+  representation;
+- create the backup **before** replacing or rewriting the configuration;
+- never overwrite an existing backup silently (deterministic MINE-owned backup
+  location; a repeated install reuses/verifies the existing backup rather than
+  clobbering it);
+- record the backup path (and a hash of the original bytes) in the managed
+  installation state / transaction record;
+- preserve safe file permissions where applicable;
+- if backup creation or verification fails, perform **no** external mutation;
+- verify the backup can be read and matches the original bytes.
+
+Backup does not excuse unnecessary formatting destruction: a config editor
+must preserve comments, ordering, and unrelated formatting where feasible. For
+  TOML configuration (Codex), use a format-preserving editor (the project-
+  approved `toml_edit` path) rather than a full parse/reserialize round trip
+  that drops comments and formatting.
+
+### Transactional installation and recovery
+
+"Write managed state last" is not transactionality. Installation is a bounded
+transaction with **preflight, staging, commit, rollback, and recovery**:
+
+**Before any external mutation (preflight):** resolve and validate every
+destination; inspect collisions and ownership; parse and validate configuration;
+determine every planned payload and configuration change; create and verify
+required backups; create a durable MINE-owned pending transaction record.
+
+**Stage** new payload and configuration content without exposing partial
+final state (write to MINE-owned staging paths or record the planned changes
+in the pending transaction, not directly into final user-visible locations
+where a crash would leave orphans).
+
+**On success (commit):** commit the approved changes; verify installed payload
+hashes and configuration entries; atomically write final managed state; remove
+the pending transaction record only after final verification succeeds.
+
+**On any failure (rollback):** restore modified structured configuration from
+the verified backup; remove only files created by the current transaction;
+restore previously managed files when updating an existing installation;
+preserve all unrelated and user-owned content; leave either a completely
+restored state or a durable recoverable transaction record.
+
+A later install/update/doctor invocation must **detect an incomplete
+transaction** and deterministically recover or report an actionable recovery
+state. Installation must never leave orphaned payload files that permanently
+block every retry with `MINE_AGENT_COLLISION`. No unrestricted `--force`
+deletion mechanism is introduced; recovery is bounded to MINE-owned resources
+proven through the pending transaction record and managed state.
+
+### Explicit configuration-root isolation
+
+When `--config-root <path>` is supplied, it is the **complete authority** for
+Agent configuration discovery. In explicit-root mode the installer:
+
+- does **not** read or honor real `CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
+  `PI_HOME`, or `OPENCODE_CONFIG_DIR`;
+- does **not** fall back to the real HOME or platform configuration directories;
+- derives all Agent paths only from the injected root and approved
+  deterministic subpaths (`.claude`, `.codex`, `.agents`, `.pi`,
+  `.config/opencode`).
+
+Real process/environment discovery and explicitly-isolated configuration roots
+use **separate construction paths** that are never mixed and then partially
+overridden. Tests that exercise poisoned environment variables must not mutate
+the global process environment of an in-process parallel test (the crate forbids
+`unsafe`); they use child processes or another isolation-safe mechanism.
 
 ## Embedded payload
 
