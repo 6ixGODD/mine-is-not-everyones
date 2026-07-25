@@ -1,5 +1,5 @@
 schema_version = 1
-revision = 35
+revision = 40
 project_id = "mine-is-not-everyones"
 workspace_id = "bootstrap-mine-v1"
 stable_branch = "master"
@@ -258,5 +258,26 @@ owner = "plan-09-1"
 run_id = "plan-09-1-release-rewire"
 started_at = "2026-07-24T05:32:01.2412913Z"
 updated_at = "2026-07-24T06:03:39.8302392Z"
+rejection_reason = ""
+compensating_plan = ""
+
+[[plans]]
+id = "10"
+path = "docs/plan/10-concurrent-release-test-tolerance.md"
+title = "Concurrent release test tolerance"
+status = "ACCEPTED"
+hard_predecessors = ["06"]
+soft_predecessors = []
+design_references = ["docs/design/execution-graph/state-machine-and-algorithms.md#plan-release", "docs/design/execution-graph/persistence-and-concurrency.md"]
+exclusive_write_paths = ["tests/release.rs", "docs/plan/10-concurrent-release-test-tolerance.md", "docs/plan/reports/10-concurrent-release-test-tolerance-implementation.md"]
+read_only_paths = []
+reserved_shared_paths = []
+implementation_report = "docs/plan/reports/10-concurrent-release-test-tolerance-implementation.md"
+review_report = "docs/plan/reports/10-concurrent-release-test-tolerance-review.md"
+implementation_commits = ["cf7df45", "2180222"]
+owner = "plan-10-impl"
+run_id = "plan-10-run-1"
+started_at = "2026-07-25T04:28:02.9394201Z"
+updated_at = "2026-07-25T05:21:26.9231546Z"
 rejection_reason = ""
 compensating_plan = ""

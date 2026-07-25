@@ -220,16 +220,41 @@ fn release_rejects_rejected_plan_others_unchanged() {
 }
 
 /// Two concurrent `mine plan release --id` invocations against the same
-/// isolated temp repo must be resolved by the shared `save_with_revision`
-/// optimistic-concurrency check: exactly one wins (revision bumps +1), the
-/// other gets `MINE_REVISION_CONFLICT`, and neither silently overwrites the
-/// graph. This is the dedicated stale/revision-conflict test required by the
-/// Plan 09-1 review for the new mutation command.
+/// isolated temp repo must be resolved by the shared `lock -> reload ->
+/// revision check -> semantic check -> mutation -> atomic write -> render`
+/// transaction. Exactly one writer performs the real `DRAFT` release
+/// (revision bumps +1, node `DRAFT -> READY`); the loser is an *honest* loser
+/// and must mutate nothing. The design
+/// (`docs/design/execution-graph/state-machine-and-algorithms.md#plan-release`)
+/// documents two valid loser outcomes of this race:
+///
+/// 1. `MINE_REVISION_CONFLICT` — the loser operated from the stale
+///    pre-winner revision and the optimistic-concurrency check rejects it; or
+/// 2. `MINE_INVALID_TRANSITION` — the loser re-reads after the winner already
+///    transitioned the node `DRAFT -> READY`, so `release_plan` sees a non-
+///    `DRAFT` node and refuses ("treat `MINE_INVALID_TRANSITION` as already
+///    released").
+///
+/// Both are valid only when the safety invariants also hold: exactly one
+/// winner, exactly one revision bump, final `READY`, no stale overwrite, no
+/// unrelated graph data change, and TOML/Markdown consistency. This is the
+/// dedicated concurrency test required by the Plan 09-1 review for the new
+/// mutation command; Plan 10 relaxed the over-constrained single-code loser
+/// assertion and strengthened the invariants.
 #[test]
 fn concurrent_release_is_resolved_by_revision_conflict() {
     let live = live_graph_bytes();
-    let (_tmp, repo) = seeded_repo(vec![node("09-1", PlanStatus::Draft, &[], &[])]);
+    // Seed the raced `DRAFT` plan plus an unrelated `ACCEPTED` plan that the
+    // release must NOT touch, to prove no unrelated graph data changes.
+    let (_tmp, repo) = seeded_repo(vec![
+        node("01", PlanStatus::Accepted, &[], &[]),
+        node("09-1", PlanStatus::Draft, &[], &[]),
+    ]);
     let n = load_graph(&repo).revision; // pre-mutation revision both readers observe
+    let unrelated_before = load_graph(&repo)
+        .get("01")
+        .expect("seeded unrelated plan 01")
+        .clone();
     let repo_str = repo.to_str().unwrap().to_string();
     let repo_a = repo_str.clone();
     let repo_b = repo_str.clone();
@@ -259,34 +284,77 @@ fn concurrent_release_is_resolved_by_revision_conflict() {
 
     let ok_a = out_a.exit_code == 0 && env_a["ok"] == true;
     let ok_b = out_b.exit_code == 0 && env_b["ok"] == true;
-    // Exactly one of the two won.
+    // Exactly one writer performed the real DRAFT release.
     assert!(ok_a ^ ok_b, "exactly one release won: a={ok_a} b={ok_b}");
 
-    // The loser failed with a revision conflict (exit 5).
+    // The loser is an honest loser: it mutated nothing. It may observe either
+    // documented stability error depending on whether it raced the revision
+    // check or re-read after the winner's DRAFT->READY transition.
     let (loser_env, winner_env) = if ok_a {
         (&env_b, &env_a)
     } else {
         (&env_a, &env_b)
     };
     assert_eq!(loser_env["ok"], false);
-    assert_eq!(loser_env["error"]["code"], "MINE_REVISION_CONFLICT");
-
-    // The serial winner bumped the revision by exactly +1 over the pre-mutation
-    // revision `n` (which both writers read before either acquired the lock).
-    let ws = load_graph(&repo);
-    assert_eq!(ws.get("09-1").unwrap().status, PlanStatus::Ready);
-    assert_eq!(
-        ws.revision,
-        n + 1,
-        "exactly one revision bump, no silent double/lost write"
+    let loser_code = loser_env["error"]["code"].as_str().unwrap_or("(none)");
+    assert!(
+        loser_code == "MINE_REVISION_CONFLICT" || loser_code == "MINE_INVALID_TRANSITION",
+        "loser must be a documented stability error, got {loser_code:?}; loser_env={loser_env}"
     );
+
+    // The winner performed exactly the DRAFT -> READY transition off the
+    // pre-mutation revision `n` (which both writers read before either lock).
+    assert_eq!(winner_env["ok"], true);
+    assert_eq!(winner_env["data"]["status_before"], "DRAFT");
+    assert_eq!(winner_env["data"]["status_after"], "READY");
     assert_eq!(
         winner_env["revision_before"].as_u64().unwrap(),
         n,
         "winner read the same pre-mutation revision as the seeded graph"
     );
-    // The loser made no observable change and did not overwrite the winner.
-    assert_eq!(loser_env["error"]["code"], "MINE_REVISION_CONFLICT");
+    assert_eq!(
+        winner_env["revision_after"].as_u64().unwrap(),
+        n + 1,
+        "winner bumped the revision by exactly +1"
+    );
+
+    // Graph revision increased exactly once; no stale writer overwrote the
+    // winner (revision is exactly n+1, never higher) and the loser wrote
+    // nothing observable.
+    let ws = load_graph(&repo);
+    assert_eq!(
+        ws.revision,
+        n + 1,
+        "exactly one revision bump, no silent double/lost write"
+    );
+    assert_eq!(ws.get("09-1").unwrap().status, PlanStatus::Ready);
+
+    // No unrelated graph data changed: the Accepted plan 01 survives identical.
+    let unrelated_after = ws.get("01").expect("unrelated plan survives");
+    assert_eq!(
+        unrelated_after, &unrelated_before,
+        "the concurrent race must not alter the unrelated Accepted plan 01"
+    );
+
+    // TOML and generated Markdown remain mutually consistent: the Markdown
+    // view reflects the final revision and the released READY status.
+    let toml = std::fs::read_to_string(repo.join("docs/plan/execution-graph.toml")).unwrap();
+    let parsed_toml: mine::domain::graph::PlanWorkspace = toml::from_str(&toml).unwrap();
+    assert_eq!(
+        parsed_toml.revision,
+        n + 1,
+        "TOML revision matches the bumped graph"
+    );
+    let md = std::fs::read_to_string(repo.join("docs/plan/execution-graph.md")).unwrap();
+    assert!(
+        md.contains("READY"),
+        "Markdown view reflects the READY status"
+    );
+    assert!(
+        md.contains("| 09-1 |"),
+        "Markdown view contains the released plan row"
+    );
+
     assert_live_unchanged(&live);
 }
 
