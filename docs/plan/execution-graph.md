@@ -7,7 +7,7 @@
 - Workspace: `bootstrap-mine-v1`
 - Stable branch: `master`
 - Integration branch: `dev`
-- Revision: `39`
+- Revision: `40`
 
 | Plan | Title | Status | Hard predecessors |
 |---|---|---|---|
@@ -23,7 +23,7 @@
 | 05-1 | MCP server official-SDK and scope correction (compensation for rejected Plan 05) | ACCEPTED | 03 |
 | 09 | Execution-graph compensation rewiring (CLI-managed) | REJECTED | 03 |
 | 09-1 | Plan release and compensation rewiring (compensation for rejected Plan 09) | ACCEPTED | 03 |
-| 10 | Concurrent release test tolerance | IMPLEMENTED | 06 |
+| 10 | Concurrent release test tolerance | ACCEPTED | 06 |
 
 ## Topology
 
