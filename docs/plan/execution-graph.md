@@ -7,7 +7,7 @@
 - Workspace: `bootstrap-mine-v1`
 - Stable branch: `master`
 - Integration branch: `dev`
-- Revision: `43`
+- Revision: `46`
 
 | Plan | Title | Status | Hard predecessors |
 |---|---|---|---|
@@ -24,9 +24,10 @@
 | 09 | Execution-graph compensation rewiring (CLI-managed) | REJECTED | 03 |
 | 09-1 | Plan release and compensation rewiring (compensation for rejected Plan 09) | ACCEPTED | 03 |
 | 10 | Concurrent release test tolerance | ACCEPTED | 06 |
+| 07-1 | Transactional agent installation and isolation | IN_PROGRESS | 06 |
 
 ## Topology
 
 ```text
-01 -> 02 -> 02-1 -> 03 -> 04 -> 05 -> 05-1 -> 09 -> 09-1 -> 06 -> 07 -> 10 -> 08
+01 -> 02 -> 02-1 -> 03 -> 04 -> 05 -> 05-1 -> 09 -> 09-1 -> 06 -> 07 -> 10 -> 07-1 -> 08
 ```
