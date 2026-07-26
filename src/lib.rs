@@ -17,6 +17,7 @@
 // external dependency, not in this crate.
 #![forbid(unsafe_code)]
 
+pub mod agent_setup;
 pub mod application;
 pub mod cli;
 pub mod domain;
