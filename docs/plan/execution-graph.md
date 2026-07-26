@@ -7,7 +7,7 @@
 - Workspace: `bootstrap-mine-v1`
 - Stable branch: `master`
 - Integration branch: `dev`
-- Revision: `47`
+- Revision: `49`
 
 | Plan | Title | Status | Hard predecessors |
 |---|---|---|---|
@@ -19,12 +19,12 @@
 | 05 | stdio MCP server and typed tools | REJECTED | 03 |
 | 06 | Final Skill contract and plugin distribution | ACCEPTED | 04, 05-1 |
 | 07 | Four-agent installer, managed state, and doctor | REJECTED | 06 |
-| 08 | Release, bootstrap, mine-sync, and self-hosting | BLOCKED | 07 |
+| 08 | Release, bootstrap, mine-sync, and self-hosting | READY | 07-1 |
 | 05-1 | MCP server official-SDK and scope correction (compensation for rejected Plan 05) | ACCEPTED | 03 |
 | 09 | Execution-graph compensation rewiring (CLI-managed) | REJECTED | 03 |
 | 09-1 | Plan release and compensation rewiring (compensation for rejected Plan 09) | ACCEPTED | 03 |
 | 10 | Concurrent release test tolerance | ACCEPTED | 06 |
-| 07-1 | Transactional agent installation and isolation | IMPLEMENTED | 06 |
+| 07-1 | Transactional agent installation and isolation | ACCEPTED | 06 |
 
 ## Topology
 
