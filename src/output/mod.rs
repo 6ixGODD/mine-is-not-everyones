@@ -68,6 +68,19 @@ pub fn exit_code_for(err: &MineError) -> i32 {
         | MineError::WriteScopeConflict { .. } => exit_code::VALIDATION,
         // Revision / lock conflicts.
         MineError::RevisionConflict { .. } | MineError::LockTimeout { .. } => exit_code::CONFLICT,
+        // Plan 07-1: agent installer path-escape / backup-failed are gate
+        // failures (write denied or mutation blocked by a failed backup).
+        MineError::AgentPathEscape { .. }
+        | MineError::AgentUnsupported { .. }
+        | MineError::AgentBackupFailed { .. } => exit_code::GATE,
+        // Agent installer collision / malformed managed state are validation
+        // gate failures (ownership or state provenance cannot be established).
+        MineError::AgentCollision { .. } | MineError::AgentManagedStateInvalid { .. } => {
+            exit_code::VALIDATION
+        }
+        // An interrupted transaction is a partial-success state requiring
+        // recovery (exit 7).
+        MineError::AgentTransactionIncomplete { .. } => exit_code::PARTIAL,
         // I/O and infrastructure failures are treated as external/gate
         // failures: filesystem is an external dependency. Partial-success
         // cases (TOML written, render failed) are surfaced as GraphInvalid with

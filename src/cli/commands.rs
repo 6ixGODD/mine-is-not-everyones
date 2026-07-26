@@ -16,6 +16,9 @@
 
 use serde_json::{Value, json};
 
+use crate::agent_setup::install::FailPhase;
+use crate::agent_setup::targets::Env;
+use crate::application::agent_service;
 use crate::application::design_service::DesignService;
 use crate::application::graph_service::{
     GraphService, PlanAcceptRequest, PlanAddRequest, PlanImplementedRequest, PlanRejectRequest,
@@ -51,7 +54,8 @@ pub fn handle(
     match group {
         "init" => init(parsed, rest),
         "status" => status(parsed, rest),
-        "doctor" => doctor(parsed, rest),
+        "doctor" => doctor(parsed, sub, rest),
+        // Plan 07-1: `mine agent ...` is wired below.
         "workspace" => match sub {
             "open" => workspace_open(parsed, rest),
             "status" => workspace_status(parsed, rest),
@@ -91,6 +95,15 @@ pub fn handle(
             _ => Err(HandlerError::usage(format!(
                 "unknown design subcommand {sub:?}"
             ))),
+        },
+        "agent" => match sub {
+            "install" => agent_install(parsed, rest),
+            "uninstall" => agent_uninstall(parsed, rest),
+            "status" => agent_status(parsed, rest),
+            "config" => agent_config(parsed, rest),
+            _ => Err(HandlerError::usage(
+                "agent expects a subcommand: install|uninstall|status|config",
+            )),
         },
         "mcp" => match sub {
             "serve" => mcp_serve(parsed, rest),
@@ -138,9 +151,18 @@ fn parse_flags(rest: &[String]) -> (Vec<(String, String)>, Vec<String>) {
             flags.push((key, val));
         } else if a.starts_with("--") {
             let key = a.trim_start_matches('-').to_string();
-            let val = rest.get(i + 1).cloned().unwrap_or_default();
+            // Boolean flags (e.g. `--dry-run`) do not consume the next token
+            // when it is itself a flag (`--config-root`); otherwise a leading
+            // boolean would swallow a following `--key value` pair.
+            let next = rest.get(i + 1);
+            let val = match next {
+                Some(v) if !v.starts_with("--") => {
+                    i += 1;
+                    v.clone()
+                }
+                _ => String::new(),
+            };
             flags.push((key, val));
-            i += 1;
         } else {
             positional.push(a.clone());
         }
@@ -259,8 +281,21 @@ fn status(parsed: &crate::cli::ParsedArgs, _rest: &[String]) -> HandlerResult {
     Ok((env, lines))
 }
 
-fn doctor(parsed: &crate::cli::ParsedArgs, _rest: &[String]) -> HandlerResult {
+fn doctor(parsed: &crate::cli::ParsedArgs, sub: &str, rest: &[String]) -> HandlerResult {
     let ctx = build_context(&parsed.global).map_err(ctx_err)?;
+    // Plan 07-1: `mine doctor --agents all` (or `--agents <slug>`) appends the
+    // agent installation diagnostics. The leaf `doctor` command may receive the
+    // `--agents` token as `sub` (the dispatcher consumes tokens[1] as sub), so
+    // fold it into the flag set.
+    let rest_with_sub: Vec<String> = if sub.starts_with("--") {
+        let mut v = vec![sub.to_string()];
+        v.extend_from_slice(rest);
+        v
+    } else {
+        rest.to_vec()
+    };
+    let (flags, _pos) = parse_flags(&rest_with_sub);
+    let agents_scope = flag(&flags, "agents");
     let mut checks: Vec<(&'static str, bool, String)> = Vec::new();
     let config = load_config_or_error(&ctx.repo_root).ok();
     let config_present = config.is_some();
@@ -314,14 +349,53 @@ fn doctor(parsed: &crate::cli::ParsedArgs, _rest: &[String]) -> HandlerResult {
             "no git repository detected".to_string()
         },
     ));
-    let all_ok = checks.iter().all(|(_, ok, _)| *ok);
+    let repo_ok = checks.iter().all(|(_, ok, _)| *ok);
+    // Plan 07-1: optional agent diagnostics (`--agents all` or `--agents <slug>`).
+    let mut agent_section: Option<Value> = None;
+    if agents_scope.is_some() {
+        let scope: &str = match &agents_scope {
+            Some(s) => s,
+            None => "all",
+        };
+        let (env, version, _fp) = agent_env(parsed, rest);
+        let report = crate::application::doctor_service::run(scope, &env, &version);
+        agent_section = Some(serde_json::to_value(&report).unwrap_or(Value::Null));
+    }
+    // `agent_not_detected` and `agent_detected_mine_not_installed` are
+    // informational, not failures.
+    let agent_problems = agent_section.as_ref().is_some_and(|s| {
+        s.get("diagnostics")
+            .and_then(|d| d.as_array())
+            .is_some_and(|arr| {
+                arr.iter().any(|d| {
+                    !matches!(
+                        d.get("status").and_then(|v| v.as_str()).unwrap_or(""),
+                        "healthy" | "agent_not_detected" | "agent_detected_mine_not_installed"
+                    )
+                })
+            })
+    });
+    let all_ok = repo_ok && !agent_problems;
+    let _ = &checks;
 
-    let mut env = envelope_for("doctor", Some(&ctx.repo_root)).with_data(json!({
-        "healthy": all_ok,
-        "checks": checks.iter().map(|(name, ok, msg)| json!({
-            "name": name, "ok": ok, "message": msg,
-        })).collect::<Vec<_>>(),
-    }));
+    let mut env = envelope_for("doctor", Some(&ctx.repo_root)).with_data({
+        let checks_json = checks
+            .iter()
+            .map(|(name, ok, msg)| {
+                json!({
+                    "name": name, "ok": ok, "message": msg,
+                })
+            })
+            .collect::<Vec<_>>();
+        let mut base = json!({
+            "healthy": all_ok,
+            "checks": checks_json,
+        });
+        if let Some(sec) = agent_section {
+            base["agents"] = sec;
+        }
+        base
+    });
     if ctx.store.load().ok().is_some() {
         if let Ok(w) = ctx.store.load() {
             env = env
@@ -339,7 +413,9 @@ fn doctor(parsed: &crate::cli::ParsedArgs, _rest: &[String]) -> HandlerResult {
             value: format!("{}: {}", if *ok { "ok" } else { "FAIL" }, msg),
         });
     }
-    if !all_ok {
+    // The repo-doctor error exit fires only on REPOSITORY check failures.
+    // Plan 07-1 agent diagnostics are reported in the success envelope.
+    if !repo_ok {
         return Err(HandlerError {
             code: "MINE_DOCTOR",
             message: "one or more MINE checks failed".to_string(),
@@ -1165,3 +1241,151 @@ impl EnvelopeWarningExt for Envelope {
 // A temporary shim for `Envelope::success("").unused()` used in `inflate`;
 // kept to avoid dead-code churn. `inflate` is itself a helper reserved for
 // future use and not currently called.
+
+// ----------------------------------------------------------------------------
+// Plan 07-1: agent installer handlers (`mine agent ...`) — isolation-correct.
+// ----------------------------------------------------------------------------
+
+/// Resolves the agent installation environment. Fix 3 (isolation): when an
+/// explicit `--config-root <path>` is supplied, the environment is built with
+/// [`Env::isolated`] — it reads NO real process environment overrides
+/// (`CLAUDE_CONFIG_DIR`/`CODEX_HOME`/`PI_HOME`/`OPENCODE_CONFIG_DIR`) and derives
+/// every Agent path only from the injected root. When `--config-root` is
+/// absent (production), the real-env constructor reads the live environment and
+/// platform home dir. The two constructors are never mixed.
+fn agent_env(parsed: &crate::cli::ParsedArgs, rest: &[String]) -> (Env, String, FailPhase) {
+    let (flags, _pos) = parse_flags(rest);
+    let mine_version = match build_context(&parsed.global) {
+        Ok(ctx) => crate::cli::context::load_config(&ctx.repo_root)
+            .map(|c| c.mine_code_version)
+            .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string()),
+        Err(_) => env!("CARGO_PKG_VERSION").to_string(),
+    };
+    let (env, fail_phase) = match flag(&flags, "config-root") {
+        Some(p) => (
+            agent_service::isolated_env(std::path::PathBuf::from(p)),
+            FailPhase::None,
+        ),
+        None => (agent_service::real_env(), FailPhase::None),
+    };
+    (env, mine_version, fail_phase)
+}
+
+fn agent_install(parsed: &crate::cli::ParsedArgs, rest: &[String]) -> HandlerResult {
+    let (flags, pos) = parse_flags(rest);
+    if pos.is_empty() {
+        return Err(HandlerError::usage(
+            "agent install requires an agent slug (claude-code|codex|pi|opencode)",
+        ));
+    }
+    let slug = &pos[0];
+    let dry_run = flags.iter().any(|(k, _)| k == "dry-run" || k == "dry");
+    let (env, version, fail_phase) = agent_env(parsed, rest);
+    let _ = &flags;
+    let outcome = agent_service::install(slug, &env, &version, dry_run, fail_phase)
+        .map_err(|e| HandlerError::from_mine(&e))?;
+    let env_data = envelope_for("agent.install", None)
+        .with_data(serde_json::to_value(&outcome).unwrap_or(Value::Null));
+    let lines = vec![HumanLine::Section(format!(
+        "agent install {}: {} skills{}",
+        outcome.agent,
+        outcome.skills_installed,
+        if outcome.updated {
+            " (updated)"
+        } else {
+            " (idempotent)"
+        }
+    ))];
+    Ok((env_data, lines))
+}
+
+fn agent_uninstall(parsed: &crate::cli::ParsedArgs, rest: &[String]) -> HandlerResult {
+    let (flags, pos) = parse_flags(rest);
+    if pos.is_empty() {
+        return Err(HandlerError::usage(
+            "agent uninstall requires an agent slug (claude-code|codex|pi|opencode)",
+        ));
+    }
+    let slug = &pos[0];
+    let dry_run = flags.iter().any(|(k, _)| k == "dry-run" || k == "dry");
+    let (env, _version, _fp) = agent_env(parsed, rest);
+    let _ = &flags;
+    let outcome =
+        agent_service::uninstall(slug, &env, dry_run).map_err(|e| HandlerError::from_mine(&e))?;
+    let env_data = envelope_for("agent.uninstall", None)
+        .with_data(serde_json::to_value(&outcome).unwrap_or(Value::Null));
+    let mut lines = vec![HumanLine::Section(format!(
+        "agent uninstall {}: removed {} files, {} config entries",
+        outcome.agent, outcome.removed_files, outcome.removed_config_entries
+    ))];
+    if !outcome.drifted_files.is_empty() {
+        lines.push(HumanLine::Field {
+            key: "  preserved (drifted)".to_string(),
+            value: outcome.drifted_files.join(", "),
+        });
+    }
+    Ok((env_data, lines))
+}
+
+fn agent_status(parsed: &crate::cli::ParsedArgs, rest: &[String]) -> HandlerResult {
+    let (env, _version, _fp) = agent_env(parsed, rest);
+    let summary = agent_service::status(&env).map_err(|e| HandlerError::from_mine(&e))?;
+    let env_data = envelope_for("agent.status", None)
+        .with_data(json!({ "installs": serde_json::to_value(&summary).unwrap_or(Value::Null) }));
+    let mut lines = vec![HumanLine::Section("mine agent status".to_string())];
+    if summary.is_empty() {
+        lines.push(HumanLine::Field {
+            key: "  ".to_string(),
+            value: "no MINE-managed agent installations".to_string(),
+        });
+    } else {
+        for s in &summary {
+            lines.push(HumanLine::Field {
+                key: format!("  {}", s.agent),
+                value: format!(
+                    "v{} ({} files, {} config entries, mcp={})",
+                    s.mine_version, s.files, s.config_entries, s.mcp_registered
+                ),
+            });
+        }
+    }
+    Ok((env_data, lines))
+}
+
+fn agent_config(_parsed: &crate::cli::ParsedArgs, rest: &[String]) -> HandlerResult {
+    let (_flags, pos) = parse_flags(rest);
+    if pos.is_empty() {
+        return Err(HandlerError::usage(
+            "agent config requires an agent slug (claude-code|codex|pi|opencode)",
+        ));
+    }
+    let slug = &pos[0];
+    let preview = agent_service::config_preview(slug).map_err(|e| HandlerError::from_mine(&e))?;
+    let env_data = envelope_for("agent.config", None)
+        .with_data(serde_json::to_value(&preview).unwrap_or(Value::Null));
+    let mut lines = vec![HumanLine::Section(format!(
+        "agent config: {}",
+        preview.agent
+    ))];
+    if preview.supports_mcp {
+        lines.push(HumanLine::Field {
+            key: "  target".to_string(),
+            value: preview.target_file.clone(),
+        });
+        lines.push(HumanLine::Field {
+            key: "  pointer".to_string(),
+            value: preview.json_pointer.clone(),
+        });
+        lines.push(HumanLine::Field {
+            key: "  entry".to_string(),
+            value: serde_json::to_string_pretty(&preview.entry).unwrap_or_default(),
+        });
+    } else {
+        lines.push(HumanLine::Field {
+            key: "  ".to_string(),
+            value: "Pi has no MCP in its minimal core; Skills use the JSON CLI fallback."
+                .to_string(),
+        });
+    }
+    Ok((env_data, lines))
+}

@@ -119,6 +119,48 @@ pub enum MineError {
     /// A filesystem input/output error.
     #[error("input/output error: {0}")]
     Io(#[from] std::io::Error),
+
+    // --- Plan 07-1: agent installer / managed state / doctor / transaction ---
+    /// A write target for the agent installer resolves outside the injected
+    /// configuration root (path traversal, symlink/junction escape).
+    /// Exit: GATE (3). Stable code `MINE_AGENT_PATH_ESCAPE`.
+    #[error(
+        "agent installer path escape: {candidate:?} is outside the configuration root {root:?}: {detail}"
+    )]
+    AgentPathEscape {
+        candidate: PathBuf,
+        root: PathBuf,
+        detail: String,
+    },
+
+    /// The agent installer refused to overwrite a pre-existing user-owned
+    /// resource whose ownership cannot be proven.
+    /// Exit: VALIDATION (4). Stable code `MINE_AGENT_COLLISION`.
+    #[error("agent installer collision: {target:?} already exists and is not MINE-owned: {detail}")]
+    AgentCollision { target: PathBuf, detail: String },
+
+    /// Managed installation state is malformed, foreign, or failed validation.
+    /// Exit: VALIDATION (4). Stable code `MINE_AGENT_MANAGED_STATE_INVALID`.
+    #[error("managed installation state is invalid: {detail}")]
+    AgentManagedStateInvalid { detail: String },
+
+    /// An agent installer operation was requested for an unsupported or
+    /// undetected harness.
+    /// Exit: GATE (3). Stable code `MINE_AGENT_UNSUPPORTED`.
+    #[error("unsupported or undetected agent: {detail}")]
+    AgentUnsupported { detail: String },
+
+    /// A mandatory configuration backup could not be created or verified before
+    /// mutation. No external mutation is performed when this fires.
+    /// Exit: GATE (3). Stable code `MINE_AGENT_BACKUP_FAILED`.
+    #[error("agent installer backup failed: {target:?}: {detail}")]
+    AgentBackupFailed { target: PathBuf, detail: String },
+
+    /// An incomplete (interrupted) installation transaction was detected. The
+    /// operation recovers or reports an actionable recovery state.
+    /// Exit: PARTIAL (7). Stable code `MINE_AGENT_TRANSACTION_INCOMPLETE`.
+    #[error("agent installer transaction incomplete: {detail}")]
+    AgentTransactionIncomplete { detail: String },
 }
 
 impl MineError {
@@ -144,6 +186,12 @@ impl MineError {
             Self::LockTimeout { .. } => "MINE_LOCK_TIMEOUT",
             Self::EvidenceMissing { .. } => "MINE_EVIDENCE_MISSING",
             Self::Io(_) => "MINE_IO",
+            Self::AgentPathEscape { .. } => "MINE_AGENT_PATH_ESCAPE",
+            Self::AgentCollision { .. } => "MINE_AGENT_COLLISION",
+            Self::AgentManagedStateInvalid { .. } => "MINE_AGENT_MANAGED_STATE_INVALID",
+            Self::AgentUnsupported { .. } => "MINE_AGENT_UNSUPPORTED",
+            Self::AgentBackupFailed { .. } => "MINE_AGENT_BACKUP_FAILED",
+            Self::AgentTransactionIncomplete { .. } => "MINE_AGENT_TRANSACTION_INCOMPLETE",
         }
     }
 }

@@ -35,7 +35,15 @@ lock_timeout_ms = 5000
 
 ## User-level state
 
-Managed install state records binary/Skill versions and hashes, owned harness entries, external-configuration backups, and last doctor result.
+Managed install state records binary/Skill versions and hashes, owned harness
+entries, external-configuration backups, and last doctor result. The agent
+installer's transactional model (preflight / staging / commit / rollback /
+recovery with a durable pending-transaction record, mandatory exact-byte
+configuration backup before mutation, and explicit `--config-root` isolation
+that never honors real process environment overrides) is specified in
+[`docs/design/integrations/distribution.md`](../integrations/distribution.md#mine-agent-install).
+The pending-transaction record is local recovery material (under the injected
+or real configuration root) and never contains secrets.
 
 ## Logging
 
@@ -53,8 +61,12 @@ Managed install state records binary/Skill versions and hashes, owned harness en
 - verified local design backup before synchronization;
 - no broad deletion commands;
 - bounded managed-branch Git actions only;
-- backups before external configuration changes;
-- exact ownership for uninstall;
+- backups before external configuration changes (exact-byte, verified,
+  recorded in the installation transaction; no mutation if backup fails);
+- exact ownership for uninstall (never inferred from a filename);
+- explicit `--config-root` isolation: real process environment overrides
+  (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `PI_HOME`, `OPENCODE_CONFIG_DIR`) are not
+  honored when an explicit configuration root is supplied;
 - dependency audit and release checksums.
 
 ## Destructive-operation policy
