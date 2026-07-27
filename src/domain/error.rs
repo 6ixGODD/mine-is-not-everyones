@@ -161,6 +161,20 @@ pub enum MineError {
     /// Exit: PARTIAL (7). Stable code `MINE_AGENT_TRANSACTION_INCOMPLETE`.
     #[error("agent installer transaction incomplete: {detail}")]
     AgentTransactionIncomplete { detail: String },
+
+    /// A rollback attempt failed after an installation operation failure. The
+    /// pending-transaction record is preserved with evidence so doctor or a
+    /// later invocation can recover. The error distinguishes the original
+    /// operation failure from the rollback failure.
+    /// Exit: PARTIAL (7). Stable code `MINE_AGENT_ROLLBACK_FAILED`.
+    #[error(
+        "agent installer rollback failed (original: {original_code}, rollback: {rollback_detail})"
+    )]
+    AgentRollbackFailed {
+        original_code: String,
+        original_message: String,
+        rollback_detail: String,
+    },
 }
 
 impl MineError {
@@ -192,6 +206,7 @@ impl MineError {
             Self::AgentUnsupported { .. } => "MINE_AGENT_UNSUPPORTED",
             Self::AgentBackupFailed { .. } => "MINE_AGENT_BACKUP_FAILED",
             Self::AgentTransactionIncomplete { .. } => "MINE_AGENT_TRANSACTION_INCOMPLETE",
+            Self::AgentRollbackFailed { .. } => "MINE_AGENT_ROLLBACK_FAILED",
         }
     }
 }

@@ -19,8 +19,10 @@
 //!    overrides (`CLAUDE_CONFIG_DIR`/`CODEX_HOME`/`PI_HOME`/`OPENCODE_CONFIG_DIR`).
 //!
 //! Selectively **ported** from the rejected Plan 07 (independently validated):
-//! [`safety`] (the `SafetyGuard` filesystem boundary, plus a real Windows-junction
-//! unit test added in-module), [`managed_state`] (ownership record), [`uninstall`]
+//! [`safety`] (the `SafetyGuard` filesystem boundary, independently verified
+//! sound against a genuine Windows junction by the Plan 07-1 independent
+//! review; no in-module junction unit test exists in `safety.rs` itself - this
+//! is an honestly disclosed limitation, not a hidden claim), [`managed_state`] (ownership record), [`uninstall`]
 //! (ownership-proven removal), [`doctor`] (truthful diagnostics), and the
 //! four-Agent destination shapes in [`targets`]. **Discarded**: the
 //! mutation-without-backup install logic, payload-first non-transactional

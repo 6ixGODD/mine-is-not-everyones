@@ -53,6 +53,11 @@ pub struct PendingTransaction {
     /// state. We record the relative paths here so rollback knows which to
     /// restore.
     pub previously_owned_paths: Vec<String>,
+    /// Evidence recorded when a rollback attempt itself failed. When present,
+    /// the pending record is retained so doctor or a later invocation can
+    /// report the actionable state.
+    #[serde(default)]
+    pub rollback_failure: Option<String>,
 }
 
 impl PendingTransaction {
@@ -183,6 +188,7 @@ mod tests {
             }),
             newly_created_paths: vec![".agents/skills/mine-arch/SKILL.md".into()],
             previously_owned_paths: vec![],
+            rollback_failure: None,
         };
         p.save(tmp.path()).unwrap();
         let loaded = PendingTransaction::load("codex", tmp.path())
@@ -220,6 +226,7 @@ mod tests {
             config_backup: Some(backup),
             newly_created_paths: vec![".agents/skills/mine-arch/SKILL.md".into()],
             previously_owned_paths: vec![],
+            rollback_failure: None,
         };
         rollback(&pending, tmp.path(), &g).unwrap();
         assert_eq!(std::fs::read(&cfg).unwrap(), original, "config restored");
@@ -252,6 +259,7 @@ mod tests {
             config_backup: Some(backup),
             newly_created_paths: vec![".claude/skills/mine-arch/SKILL.md".into()],
             previously_owned_paths: vec![],
+            rollback_failure: None,
         };
         pending.save(tmp.path()).unwrap();
         detect_and_recover("claude-code", tmp.path(), &g).unwrap();
