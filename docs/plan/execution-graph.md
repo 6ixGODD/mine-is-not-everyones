@@ -7,7 +7,7 @@
 - Workspace: `bootstrap-mine-v1`
 - Stable branch: `master`
 - Integration branch: `dev`
-- Revision: `53`
+- Revision: `54`
 
 | Plan | Title | Status | Hard predecessors |
 |---|---|---|---|
@@ -25,7 +25,7 @@
 | 09-1 | Plan release and compensation rewiring (compensation for rejected Plan 09) | ACCEPTED | 03 |
 | 10 | Concurrent release test tolerance | ACCEPTED | 06 |
 | 07-1 | Transactional agent installation and isolation | ACCEPTED | 06 |
-| 11 | Rollback failure evidence and junction doc fix | IMPLEMENTED | 07-1 |
+| 11 | Rollback failure evidence and junction doc fix | ACCEPTED | 07-1 |
 
 ## Topology
 
