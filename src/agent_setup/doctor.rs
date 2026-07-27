@@ -13,6 +13,7 @@ use crate::agent_setup::managed_state::{ManagedState, OwnedFile};
 use crate::agent_setup::safety::{SafetyGuard, content_hash};
 use crate::agent_setup::targets::{Agent, Env, Targets};
 use crate::agent_setup::transaction;
+use crate::agent_setup::transaction::PendingTransaction;
 use crate::infrastructure::embedded_skills;
 
 #[derive(Debug, Clone, Serialize)]
@@ -85,10 +86,20 @@ pub fn doctor(
     // interrupted install requiring recovery.
     let incomplete = transaction::is_pending(agent.slug(), &env.config_root);
     if incomplete {
+        // If the pending record carries rollback-failure evidence, surface it.
+        let note = match PendingTransaction::load(agent.slug(), &env.config_root) {
+            Ok(Some(p)) if p.rollback_failure.is_some() => {
+                format!(
+                    "an incomplete installation transaction exists with a prior rollback failure ({}); recovery is needed",
+                    p.rollback_failure.unwrap_or_default()
+                )
+            }
+            _ => "an incomplete installation transaction exists; the next install recovers or reports it".to_string(),
+        };
         return AgentDiagnostic {
             agent: agent.slug().to_string(),
             status: AgentStatus::IncompleteTransaction,
-            note: "an incomplete installation transaction exists; the next install recovers or reports it".to_string(),
+            note,
             managed_files: 0,
             found_files: 0,
             drifted_files: 0,

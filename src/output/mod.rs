@@ -81,6 +81,7 @@ pub fn exit_code_for(err: &MineError) -> i32 {
         // An interrupted transaction is a partial-success state requiring
         // recovery (exit 7).
         MineError::AgentTransactionIncomplete { .. } => exit_code::PARTIAL,
+        MineError::AgentRollbackFailed { .. } => exit_code::PARTIAL,
         // I/O and infrastructure failures are treated as external/gate
         // failures: filesystem is an external dependency. Partial-success
         // cases (TOML written, render failed) are surfaced as GraphInvalid with

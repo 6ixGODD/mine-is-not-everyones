@@ -1,5 +1,5 @@
 schema_version = 1
-revision = 49
+revision = 54
 project_id = "mine-is-not-everyones"
 workspace_id = "bootstrap-mine-v1"
 stable_branch = "master"
@@ -300,5 +300,26 @@ owner = "plan-07-1-impl"
 run_id = "plan-07-1-run-1"
 started_at = "2026-07-25T15:37:00.1941376Z"
 updated_at = "2026-07-26T18:53:18.3543397Z"
+rejection_reason = ""
+compensating_plan = ""
+
+[[plans]]
+id = "11"
+path = "docs/plan/11-rollback-failure-evidence-and-junction-doc-fix.md"
+title = "Rollback failure evidence and junction doc fix"
+status = "ACCEPTED"
+hard_predecessors = ["07-1"]
+soft_predecessors = []
+design_references = ["docs/design/integrations/distribution.md#transactional-installation-and-recovery", "docs/design/operations/configuration-security-observability.md"]
+exclusive_write_paths = ["src/agent_setup/install.rs", "src/agent_setup/transaction.rs", "src/agent_setup/doctor.rs", "src/agent_setup/mod.rs", "src/domain/error.rs", "src/output/mod.rs", "tests/agent_setup/transaction_tests.rs", "docs/plan/11-rollback-failure-evidence-and-junction-doc-fix.md", "docs/plan/reports/11-rollback-failure-evidence-and-junction-doc-fix-implementation.md"]
+read_only_paths = []
+reserved_shared_paths = []
+implementation_report = "docs/plan/reports/11-rollback-failure-evidence-and-junction-doc-fix-implementation.md"
+review_report = "docs/plan/reports/11-rollback-failure-evidence-and-junction-doc-fix-review.md"
+implementation_commits = ["bc1d62b", "9c7e16f"]
+owner = "plan-11-impl"
+run_id = "plan-11-run-1"
+started_at = "2026-07-26T19:02:17.4570629Z"
+updated_at = "2026-07-27T03:24:04.6978107Z"
 rejection_reason = ""
 compensating_plan = ""

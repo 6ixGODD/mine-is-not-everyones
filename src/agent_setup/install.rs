@@ -159,6 +159,7 @@ fn install_inner(
             .iter()
             .map(|f| f.path.clone())
             .collect(),
+        rollback_failure: None,
     };
     if !dry_run {
         pending.save(&env.config_root)?;
@@ -359,15 +360,32 @@ fn rollback_and_fail(
     guard: &SafetyGuard,
     err: MineError,
 ) -> MineResult<InstallOutcome> {
-    let _ = crate::agent_setup::transaction::rollback(pending, config_root, guard);
-    // Leave the pending record so the next install detects + recovers. But if
-    // rollback fully restored state, remove it so retries are clean. Rollback
-    // restored the config and removed orphans; keep the record only when
-    // recovery is still needed. We remove it here: detect_and_recover at the
-    // top of the next install will find nothing because we removed orphans +
-    // restored backup, so a fresh preflight+pending proceeds cleanly.
-    let _ = PendingTransaction::remove(&pending.agent, config_root);
-    Err(err)
+    let original_code = err.code().to_string();
+    let original_message = format!("{err}");
+    let rollback_result = crate::agent_setup::transaction::rollback(pending, config_root, guard);
+    match rollback_result {
+        Ok(()) => {
+            // Rollback completed: remove the pending record so retries are
+            // clean. detect_and_recover at the top of the next install finds
+            // nothing and a fresh preflight+pending proceeds cleanly.
+            let _ = PendingTransaction::remove(&pending.agent, config_root);
+            Err(err)
+        }
+        Err(rollback_err) => {
+            // Rollback failed: preserve the pending record with rollback-failure
+            // evidence so doctor or a later invocation can recover or report
+            // an actionable state. Do NOT remove the record; do NOT silently
+            // claim a clean rollback.
+            let mut enriched = pending.clone();
+            enriched.rollback_failure = Some(format!("{rollback_err}"));
+            let _ = enriched.save(config_root);
+            Err(MineError::AgentRollbackFailed {
+                original_code,
+                original_message,
+                rollback_detail: format!("{rollback_err}"),
+            })
+        }
+    }
 }
 
 fn inject_err(phase: &str) -> MineError {
