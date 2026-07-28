@@ -38,14 +38,15 @@ else
 fi
 
 # --- Download the prebuilt binary -----------------------------------
+# Friendly platform names match the release artifact filenames.
 case "$(uname -s):$(uname -m)" in
-  Linux:x86_64)        target="x86_64-unknown-linux-gnu" ;;
-  Darwin:arm64)        target="aarch64-apple-darwin" ;;
-  Darwin:x86_64)      target="x86_64-apple-darwin" ;;
-  *) die "unsupported platform: $(uname -s) $(uname -m). Prebuilt binaries are published for Linux x86_64, macOS arm64/x86_64, and Windows x86_64." ;;
+  Linux:x86_64)       display="linux-x86_64" ;;
+  Darwin:arm64)       display="macos-arm64"  ;;
+  Darwin:x86_64)      display="macos-x86_64" ;;
+  *) die "unsupported platform: $(uname -s) $(uname -m). Prebuilt binaries are published for Linux x86_64, macOS arm64, and Windows x86_64." ;;
 esac
 
-asset="mine-$target.tar.gz"
+asset="mine-$display.tar.gz"
 url="https://github.com/$release_account/$release_repo/releases/download/$tag/$asset"
 notify "Downloading $url"
 tmpdir="$(mktemp -d)"

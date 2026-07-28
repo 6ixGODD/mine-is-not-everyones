@@ -1,0 +1,47 @@
+# Maintains CHANGELOG.md in the repository from Conventional Commits.
+#
+# Triggered on every `v*` tag push. Runs git-cliff against the full history,
+# writes/updates CHANGELOG.md at the repo root, and commits it back to the
+# stable branch. The GitHub Release body is built separately in release.yml
+# (same cliff.toml) so the release note = generated changelog + the hand-written
+# install/usage template.
+name: changelog
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Commit the changelog back to the stable branch the tag points at.
+          ref: ${{ github.ref }}
+
+      - name: Generate CHANGELOG.md with git-cliff
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --all --prepend CHANGELOG.md
+        env:
+          OUTPUT: CHANGELOG.md
+
+      - name: Commit CHANGELOG.md
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet CHANGELOG.md; then
+            echo "CHANGELOG.md unchanged; nothing to commit."
+          else
+            git add CHANGELOG.md
+            git commit -m "docs(changelog): update CHANGELOG.md for ${{ github.ref_name }}"
+            git push
+          fi

@@ -109,46 +109,24 @@ pub fn remove_self() -> MineResult<bool> {
 }
 
 /// Returns (asset filename, binary name inside the archive) for the current
-/// platform.
+/// platform. Uses the friendly release asset names (no Rust target triple).
 fn current_platform_asset() -> (&'static str, &'static str) {
-    let target = if cfg!(target_os = "windows") {
-        "x86_64-pc-windows-msvc"
+    let asset = if cfg!(target_os = "windows") {
+        "mine-windows-x86_64.zip"
     } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-        "aarch64-apple-darwin"
+        "mine-macos-arm64.tar.gz"
     } else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
-        "x86_64-apple-darwin"
+        "mine-macos-x86_64.tar.gz"
     } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
-        "x86_64-unknown-linux-gnu"
+        "mine-linux-x86_64.tar.gz"
     } else {
         return ("", "mine");
-    };
-    let ext = if cfg!(target_os = "windows") {
-        "zip"
-    } else {
-        "tar.gz"
     };
     let bin = if cfg!(target_os = "windows") {
         "mine.exe"
     } else {
         "mine"
     };
-    // Leak a static string for the asset name. We use once_cell-free approach:
-    // format at runtime and pass via a small static via Box::leak is heavy;
-    // instead return known static mappings.
-    static WINDOWS_ASSET: &str = "mine-x86_64-pc-windows-msvc.zip";
-    static LINUX_ASSET: &str = "mine-x86_64-unknown-linux-gnu.tar.gz";
-    static MACOS_ARM_ASSET: &str = "mine-aarch64-apple-darwin.tar.gz";
-    static MACOS_X86_ASSET: &str = "mine-x86_64-apple-darwin.tar.gz";
-    let asset = if cfg!(target_os = "windows") {
-        WINDOWS_ASSET
-    } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-        MACOS_ARM_ASSET
-    } else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
-        MACOS_X86_ASSET
-    } else {
-        LINUX_ASSET
-    };
-    let _ = (target, ext);
     (asset, bin)
 }
 

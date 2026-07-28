@@ -37,7 +37,9 @@ if ($Ref -eq "latest") {
 if (-not $tag) { throw "Could not resolve release tag for $ReleaseAccount/$ReleaseRepo." }
 
 # --- Download the prebuilt binary -----------------------------------
-$target = "x86_64-pc-windows-msvc"
+# Friendly platform names match the release artifact filenames
+# (mine-windows-x86_64.zip, mine-linux-x86_64.tar.gz, mine-macos-arm64.tar.gz).
+$target = "windows-x86_64"
 $asset = "mine-$target.zip"
 $assetUrl = "https://github.com/$ReleaseAccount/$ReleaseRepo/releases/download/$tag/$asset"
 Write-Host "Downloading $assetUrl"
@@ -54,7 +56,7 @@ Expand-Archive -Path $zip -DestinationPath $tmp -Force
 
 $srcExe = Join-Path $tmp "mine.exe"
 if (-not (Test-Path -LiteralPath $srcExe)) {
-    # The archive may stage the binary one level down.
+    # The archive may stage the binary under a staging directory.
     $staged = Get-ChildItem -Path $tmp -Recurse -Filter "mine.exe" | Select-Object -First 1
     if ($staged) { $srcExe = $staged.FullName }
 }

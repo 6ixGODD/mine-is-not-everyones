@@ -328,16 +328,16 @@ jobs:
   # pushes never reach this job (`if` gate), so they cannot accidentally
   # publish a release.
   release-artifacts:
-    name: Release artifact (${{ matrix.target }})
+    name: Release artifact (${{ matrix.display }})
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, archive: tar.gz }
-          - { os: macos-latest, target: aarch64-apple-darwin, archive: tar.gz }
-          - { os: windows-latest, target: x86_64-pc-windows-msvc, archive: zip }
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, display: linux-x86_64, archive: tar.gz }
+          - { os: macos-latest, target: aarch64-apple-darwin, display: macos-arm64, archive: tar.gz }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, display: windows-x86_64, archive: zip }
     permissions:
       contents: read
     steps:
@@ -361,36 +361,42 @@ jobs:
         run: |
           set -eu
           TARGET='${{ matrix.target }}'
+          DISPLAY='${{ matrix.display }}'
           ARCHIVE='${{ matrix.archive }}'
           if [ "$ARCHIVE" = "zip" ]; then
             EXT=zip
             BIN=target/"$TARGET"/release/mine.exe
+            BIN_NAME=mine.exe
           else
             EXT=tar.gz
             BIN=target/"$TARGET"/release/mine
+            BIN_NAME=mine
           fi
           test -f "$BIN"
-          STAGE="mine-$TARGET-stage"
+          STAGE="mine-$DISPLAY-stage"
           rm -rf "$STAGE"; mkdir -p "$STAGE"
-          cp "$BIN" "$STAGE"/mine
+          # Keep the platform-native binary name (mine.exe on Windows, mine on
+          # Unix). Renaming mine.exe -> mine breaks Windows users and
+          # bootstrap's archive lookup.
+          cp "$BIN" "$STAGE"/"$BIN_NAME"
           cp README.md LICENSE "$STAGE"/ 2>/dev/null || true
           if [ "$ARCHIVE" = "zip" ]; then
-            7z a "mine-$TARGET.$EXT" "$STAGE"
+            7z a "mine-$DISPLAY.$EXT" "$STAGE"
           else
-            tar czf "mine-$TARGET.$EXT" -C "$STAGE" .
+            tar czf "mine-$DISPLAY.$EXT" -C "$STAGE" .
           fi
-          FILE="mine-$TARGET.$EXT"
+          FILE="mine-$DISPLAY.$EXT"
           python -c "import hashlib; h=hashlib.sha256(open('$FILE','rb').read()).hexdigest(); open('$FILE'+'.sha256','w').write(h+'  '+'$FILE'+chr(10)); print(h, '$FILE')"
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
-          name: release-artifact-${{ matrix.target }}
+          name: release-artifact-${{ matrix.display }}
           path: |
-            mine-${{ matrix.target }}.tar.gz
-            mine-${{ matrix.target }}.tar.gz.sha256
-            mine-${{ matrix.target }}.zip
-            mine-${{ matrix.target }}.zip.sha256
+            mine-${{ matrix.display }}.tar.gz
+            mine-${{ matrix.display }}.tar.gz.sha256
+            mine-${{ matrix.display }}.zip
+            mine-${{ matrix.display }}.zip.sha256
           if-no-files-found: error
 
   release:
@@ -402,6 +408,34 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history so git-cliff can walk commits since the last tag.
+          fetch-depth: 0
+
+      - name: Generate changelog with git-cliff
+        uses: orhun/git-cliff-action@v4
+        id: cliff
+        with:
+          config: cliff.toml
+          args: --latest --strip-header
+        env:
+          OUTPUT: CHANGES.md
+
+      - name: Build release body (changelog + template)
+        shell: bash
+        run: |
+          set -eu
+          # changelog from git-cliff, then the hand-written install/usage
+          # section from the template.
+          {
+            cat "$CLIFF_OUTPUT"
+            echo
+            cat .github/RELEASE_NOTES_TEMPLATE.md
+          } > RELEASE_BODY.md
+          echo "--- release body ---"
+          cat RELEASE_BODY.md
+        env:
+          CLIFF_OUTPUT: ${{ steps.cliff.outputs.content }}
 
       - name: Download all release artifacts
         uses: actions/download-artifact@v4
@@ -426,7 +460,7 @@ jobs:
       - name: Create GitHub Release and upload assets
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          body_path: RELEASE_BODY.md
           fail_on_unmatched_files: true
           files: |
             release/mine-*.tar.gz
