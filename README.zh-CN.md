@@ -1,151 +1,218 @@
-# MINE
+<h1 align="center">MINE</h1>
 
-> **MINE Is Not Everyone’s.**
+<p align="center"><strong>MINE Is Not Everyone's.</strong></p>
 
-MINE 是一套面向 Claude Code、Codex、Pi 和 OpenCode 的个人化、强约束、具有有限破坏性的工程工作流。
+<p align="center">
+  面向 Claude Code、Codex、Pi 与 OpenCode 的强约束、文档驱动工程工作流。
+</p>
 
-它服务于愿意让 Coding Agent 在严格仓库治理下作出明确决策的单一仓库所有者。它不是兼容性框架，不是迁移助手，也不会温柔地保留它遇到的每一种历史文档和旧约定。
+<p align="center">
+  <a href="https://github.com/6ixGODD/mine-is-not-everyones/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <img src="https://img.shields.io/badge/rust-1.85%2B-orange.svg" alt="Rust 1.85+">
+  <img src="https://img.shields.io/badge/agents-Claude%20Code%20%7C%20Codex%20%7C%20Pi%20%7C%20OpenCode-6a5acd.svg" alt="Supported agents">
+</p>
 
-**你可以使用它。这并不代表你的仓库配得上它。**
+<p align="center"><a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a></p>
 
-## MINE 的设计哲学
+---
 
-MINE 使用文档驱动开发，但不会把已经过时的文档奉为圣旨。
+## 为什么需要 MINE
 
-- `docs/design/` 是 MINE 独占管理的架构状态。
-- `mine-sync` 负责把真实仓库同步到这套架构状态。
-- 除非用户明确要求保留某项设计，执行同步时以当前代码、Schema、配置和可观测运行行为为准。
-- 重写 Design 前，MINE 会在 `docs/design-backup-<timestamp>/` 创建本地忽略的备份。
-- Plan、执行图、实施报告和审查报告只存在于 `dev` 与 `plan/*` 临时分支，不进入稳定版本。
-- MINE 不保留不受支持的旧 Design 目录结构、废弃内部契约和偶然形成的兼容债务。
+* 架构文档会逐渐偏离实现；
+* 规划随对话上下文消散；
+* 实施、审查与发布之间缺少明确边界；
+* 临时分支和过程文档容易进入稳定版本；
+* 新会话需要重新建立工程语境。
 
-MINE 可以重写不准确的设计文档，并在发版时销毁临时开发过程产物。它不代表可以随意删除文件、执行破坏性 Git 恢复，或者向模型暴露任意 Shell。
+MINE 把架构、规划、实施、审查与发布收口留在仓库中，由确定性工具约束，可版本化、可追溯。
 
-## MINE 独占 `docs/design/`
+## 工作方式
 
-MINE 管理的 Design 树必须包含：
+五个 Agent Skill 负责工作流与工程判断，一个 Rust 二进制负责确定性部分。
 
-```text
-docs/design/.mine-design.toml
+```mermaid
+flowchart LR
+    A["mine-arch\n需求 → 设计"] --> B["mine-plan-create\n设计 → Plan"]
+    B --> C["mine-plan-exec\nPlan → 实现"]
+    C --> D["mine-plan-review\n验证 · 修正 · 裁决 · 发布收口"]
+    S["mine-sync\n设计 ↔ 代码 对齐"] -.->|已有仓库| A
 ```
 
-老项目如果已经把其他架构文档放在 `docs/design/`，请在执行 `mine init` 前自行重命名或删除。MINE 故意不兼容任意历史目录结构。
+| Skill | 职责 |
+|---|---|
+| `mine-arch` | 依据需求创建或演进目标架构 |
+| `mine-sync` | 将 Design 与真实仓库对齐 |
+| `mine-plan-create` | 把已确认的 Design 变更拆解为可执行 Plan |
+| `mine-plan-exec` | 在仓库治理约束下实施单个 Plan |
+| `mine-plan-review` | 独立审查、直接修正、裁定接受或拒绝，并完成发布收口 |
 
-发现没有 MINE 标记的 `docs/design/` 时，初始化必须直接报命名空间冲突，而不是猜测如何迁移。
+`mine` 二进制负责：
 
-## 五个 Skill
+* 仓库初始化；
+* 执行图状态管理；
+* Plan 生命周期流转；
+* 文件锁与原子写入；
+* Design 与执行图校验；
+* Agent 安装与诊断；
+* 分发资产同步；
+* 发布前检查。
 
-```text
-mine-arch
-mine-sync
-mine-plan-create
-mine-plan-exec
-mine-plan-review
+需求与边界只需说明一次。
+
+## 安装
+
+### Windows（PowerShell）
+
+```powershell
+irm https://raw.githubusercontent.com/6ixGODD/mine-is-not-everyones/master/scripts/bootstrap.ps1 | iex
 ```
 
-- `mine-arch`：以需求为中心创建或演进目标架构。
-- `mine-sync`：以代码为中心将仓库现实同步到 Design。
-- `mine-plan-create`：创建不可变、用完即丢的 Plan。
-- `mine-plan-exec`：受治理地实施一份 Plan。
-- `mine-plan-review`：独立验收或拒绝实现。
+### macOS 与 Linux
 
-初始化、执行图状态、校验、加锁、安装、诊断和发行等确定性工作全部属于 Rust `mine` 可执行程序。
+```sh
+curl -fsSL https://raw.githubusercontent.com/6ixGODD/mine-is-not-everyones/master/scripts/bootstrap.sh | sh
+```
 
-## 只支持四个平台
+装好后需要重启终端。Windows 安装到 `%LOCALAPPDATA%\Programs\mine`，Linux/macOS 安装到 `~/.local/bin`。
 
-- Claude Code；
-- Codex；
-- Pi；
-- OpenCode。
+### 指定版本
 
-Cursor、Windsurf、Cline 等不在范围内。需要的人自己维护 Fork。
+默认装最新发布的 Release。锁定版本时设置 `MINE_REF`：
+
+```sh
+MINE_REF=v0.1.0 sh -c "$(curl -fsSL https://raw.githubusercontent.com/6ixGODD/mine-is-not-everyones/master/scripts/bootstrap.sh)"
+```
+
+```powershell
+$env:MINE_REF = 'v0.1.0'
+irm https://raw.githubusercontent.com/6ixGODD/mine-is-not-everyones/master/scripts/bootstrap.ps1 | iex
+```
+
+### Claude Code 插件
+
+```text
+/plugin marketplace add 6ixGODD/mine-is-not-everyones
+/plugin install mine@mine-is-not-everyones
+```
+
+<details>
+<summary>从源码构建</summary>
+
+需 Rust 1.85：
+
+```sh
+cargo install --path . --locked
+./scripts/install.sh
+```
+
+</details>
 
 ## 快速开始
 
+示例直接使用 Skill 名称，具体调用方式因 Agent 客户端而异。
+
 ### 新仓库
 
+初始化 Git，再初始化 MINE：
+
 ```bash
+git init
 mine init
 ```
 
-然后打开支持的 Coding Agent，调用：
+`mine init` 只做确定性初始化；架构、Plan、实现由 Skill 负责。
+
+打开 Agent，给出需求：
 
 ```text
-mine-arch <你的需求>
+mine-arch 创建一个支持导入、导出和撤销操作的本地任务管理 CLI。
 ```
 
-`mine init` 只负责创建 MINE 所需的配置、标记、模板和 Agent 集成。它不扫描仓库、不写架构、不创建 Plan、不启动 Agent，也不实现代码。
-
-### 老仓库
-
-如果原仓库已经存在非 MINE 管理的 `docs/design/`，先重命名或删除。
-
-```bash
-mine init
-```
-
-然后建立与当前代码一致的 Design 基线：
+随后：
 
 ```text
-mine-sync
-```
-
-大仓库最好给范围：
-
-```text
-mine-sync 只同步认证、授权和身份持久化子系统
-```
-
-用户不给范围时，Agent 被允许自由探索整个仓库。由此产生的 Token 和时间成本由提交无范围需求的用户承担。
-
-同步完成后，按以下流程演进系统：
-
-```text
-mine-arch <新需求>
 mine-plan-create
-mine-plan-exec
-mine-plan-review
+mine-plan-exec <Plan 路径>
+mine-plan-review <Plan 路径>
 ```
 
-## 长期状态与临时状态
+### 已有仓库
 
-稳定分支保留：
+若仓库已用 `docs/design/` 存放无关文档，请先重命名或移走该目录。
+
+```bash
+mine init
+```
+
+建立与当前代码一致的 Design 基线：
 
 ```text
-代码
-测试
-配置
-README.md
-README.zh-CN.md
-docs/design/
-.mine/config.toml
-AGENTS.md
+mine-sync 认证与授权子系统
 ```
 
-稳定分支不得保留：
+再照常演进仓库：
 
 ```text
-docs/plan/
-执行图
-实施报告
-审查报告
-临时 Design 备份
-dev
-plan/*
+mine-arch 增加 Passkey 登录。
+mine-plan-create
+mine-plan-exec <Plan 路径>
+mine-plan-review <Plan 路径>
 ```
 
-详细说明见 [文档索引](docs/README.md) 和 [用户手册](docs/user-guide.md)。
+> 大型仓库应为 `mine-sync` 明确范围。
 
-## 语言策略
+## 仓库模型
 
-- `README.md`：英文源文档；
-- `README.zh-CN.md`：中文翻译；
-- `docs/**`：只写英文。
+MINE 独占管理 `docs/design/`，标记文件为 `docs/design/.mine-design.toml`。
 
-## 警告
+同步时，现有代码、Schema、配置、测试与可观测运行行为优先于过时的 Design，除非用户明确要求保留某项设计决策。
 
-MINE 默认仓库所有者接受强约束，并授权 Agent 按规则重构 Design 文档、创建受管理分支、提交明确范围的修改、将通过审查的 Plan 分支合入 `dev`，以及在发布收口时删除 MINE 临时产物。
+重写 Design 前，MINE 先创建本地、被 Git 忽略的备份。
 
-MINE 仍然拒绝任意 `reset --hard`、`git clean`、盲目 stash、强制推送、无限制 Shell 删除和仓库外写入。
+`dev`、`plan/*`、`docs/plan/`、执行图、实施报告、审查报告只存在于开发过程，不进入稳定版本。
 
-MINE 之所以固执，是因为模棱两可太贵了。
+## 审查行为
+
+Reviewer 独立验证实现，也可直接修复范围明确的局部缺陷、补强测试、修正工作流问题、解决发布收口的小型阻塞，并单独提交、写入审查报告、重新验证。
+
+只有大量独立工作、实质性 Design 变更、重大范围扩张、公共契约变更，或无法在本轮审查中完成时，才创建补偿 Plan。
+
+## 权限边界
+
+MINE 面向接受强约束，并允许 Coding Agent 在治理规则内操作仓库的单一仓库所有者。
+
+| MINE 可以 | MINE 绝不会 |
+|---|---|
+| 重写不准确的 MINE 受管理 Design | 执行任意 `git reset --hard` |
+| 创建并使用受管理的 `dev`、`plan/*` 分支 | 执行 `git clean` |
+| 在当前 Plan 范围内提交修改 | 盲目 stash |
+| 合并已通过审查的工作 | 强制推送 |
+| 清理 MINE 自有的临时发布产物 | 重写公共历史 |
+| | 删除无关分支或文件 |
+| | 执行无边界的 Shell 删除 |
+| | 向仓库外写入文件 |
+
+"破坏性"仅针对过时的 MINE 受管理 Design 与临时过程状态。
+
+## 支持的客户端
+
+* Claude Code
+* Codex
+* Pi
+* OpenCode
+
+## 当前状态
+
+MINE 仍处于早期阶段，而且有意保持强烈倾向性。
+
+建议在可恢复的仓库中试用，阅读生成的 Design，检查 Git 历史，验证最终稳定输出。
+
+## 文档
+
+* [文档索引](docs/README.md)
+* [用户手册](docs/user-guide.md)
+* [Design 索引](docs/design/index.md)
+
+## 许可证
+
+MIT

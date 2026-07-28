@@ -1,153 +1,218 @@
-# MINE
+<h1 align="center">MINE</h1>
 
-> **MINE Is Not Everyone’s.**
+<p align="center"><strong>MINE Is Not Everyone's.</strong></p>
 
-MINE is a personal, destructive-by-design engineering workflow for Claude Code, Codex, Pi, and OpenCode.
+<p align="center">
+  An opinionated, document-driven engineering workflow for Claude Code, Codex, Pi, and OpenCode.
+</p>
 
-It is built for one repository owner who is willing to let coding agents make strong, explicit decisions under strict repository governance. It is not a compatibility framework, a migration assistant, or a polite layer that preserves every historical document and convention it encounters.
+<p align="center">
+  <a href="https://github.com/6ixGODD/mine-is-not-everyones/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <img src="https://img.shields.io/badge/rust-1.85%2B-orange.svg" alt="Rust 1.85+">
+  <img src="https://img.shields.io/badge/agents-Claude%20Code%20%7C%20Codex%20%7C%20Pi%20%7C%20OpenCode-6a5acd.svg" alt="Supported agents">
+</p>
 
-**You may use it. That does not mean your repository is ready for it.**
+<p align="center"><a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a></p>
 
-## The MINE philosophy
+---
 
-MINE practices document-driven development, but it does not worship stale documents.
+## Why MINE
 
-- `docs/design/` is MINE-owned architectural state.
-- `mine-sync` reconciles that state with the real repository.
-- Unless the user explicitly protects a design decision, current code, schemas, configuration, and observable runtime behavior win during synchronization.
-- Before rewriting design, MINE creates a local ignored backup under `docs/design-backup-<timestamp>/`.
-- Temporary plans, execution graphs, implementation reports, and review reports exist only on `dev` and `plan/*` branches. They do not survive stable release integration.
-- MINE does not preserve unsupported legacy design layouts, obsolete internal contracts, or accidental compatibility debt.
+* Architecture docs drift from the implementation.
+* Plans vanish with the conversation context that produced them.
+* Implementation, review, and release lack clear boundaries.
+* Temporary branches and process documents leak into stable releases.
+* Each new session rebuilds the engineering context from scratch.
 
-“Destructive” means MINE is allowed to replace inaccurate design documentation and discard temporary development process artifacts. It does **not** mean arbitrary filesystem deletion, destructive Git recovery, or unbounded shell execution.
+MINE keeps architecture, planning, implementation, review, and release closure in the repository, constrained by deterministic tools, versionable and traceable.
 
-## MINE owns `docs/design/`
+## How it works
 
-A MINE-managed design tree contains:
+Five Agent Skills handle workflow and engineering judgment; one Rust binary handles the deterministic parts.
 
-```text
-docs/design/.mine-design.toml
+```mermaid
+flowchart LR
+    A["mine-arch\nrequirements → design"] --> B["mine-plan-create\ndesign → Plan"]
+    B --> C["mine-plan-exec\nPlan → implementation"]
+    C --> D["mine-plan-review\nverify · fix · rule · release closure"]
+    S["mine-sync\ndesign ↔ code alignment"] -.->|existing repo| A
 ```
 
-If an existing repository already uses `docs/design/` for unrelated or legacy documentation, rename or remove that directory before running `mine init`. MINE intentionally does not attempt to infer or preserve arbitrary historical layouts.
+| Skill | Responsibility |
+|---|---|
+| `mine-arch` | Create or evolve the target architecture from requirements |
+| `mine-sync` | Align Design with the real repository |
+| `mine-plan-create` | Break a confirmed Design change into an executable Plan |
+| `mine-plan-exec` | Implement one Plan under repository governance |
+| `mine-plan-review` | Independent review, direct fixes, accept/reject, and release closure |
 
-A conflicting unmarked `docs/design/` causes initialization to stop with a namespace-conflict error.
+The `mine` binary handles:
 
-## Five Skills
+* repository initialization;
+* execution-graph state;
+* Plan lifecycle transitions;
+* file locking and atomic writes;
+* Design and graph validation;
+* Agent installation and diagnostics;
+* distribution asset sync;
+* release preflight.
 
-```text
-mine-arch
-mine-sync
-mine-plan-create
-mine-plan-exec
-mine-plan-review
+Requirements and boundaries are stated once.
+
+## Installation
+
+### Windows (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/6ixGODD/mine-is-not-everyones/master/scripts/bootstrap.ps1 | iex
 ```
 
-- `mine-arch`: requirement-first architecture creation and evolution.
-- `mine-sync`: code-first repository-to-design synchronization.
-- `mine-plan-create`: immutable ephemeral plan creation.
-- `mine-plan-exec`: governed implementation of one plan.
-- `mine-plan-review`: independent acceptance or rejection.
+### macOS and Linux
 
-Everything deterministic—initialization, graph state, validation, locking, installation, diagnostics, and distribution—belongs to the Rust `mine` executable.
+```sh
+curl -fsSL https://raw.githubusercontent.com/6ixGODD/mine-is-not-everyones/master/scripts/bootstrap.sh | sh
+```
 
-## Supported environments
+Reopen your terminal after install. Windows installs to `%LOCALAPPDATA%\Programs\mine`; Linux/macOS to `~/.local/bin`.
 
-Only these environments are first-class:
+### Pinning a version
 
-- Claude Code;
-- Codex;
-- Pi;
-- OpenCode.
+The default is the latest release. Pin a tag with `MINE_REF`:
 
-Cursor, Windsurf, Cline, and other harnesses are intentionally out of scope. Their users may maintain their own forks.
+```sh
+MINE_REF=v0.1.0 sh -c "$(curl -fsSL https://raw.githubusercontent.com/6ixGODD/mine-is-not-everyones/master/scripts/bootstrap.sh)"
+```
+
+```powershell
+$env:MINE_REF = 'v0.1.0'
+irm https://raw.githubusercontent.com/6ixGODD/mine-is-not-everyones/master/scripts/bootstrap.ps1 | iex
+```
+
+### Claude Code plugin
+
+```text
+/plugin marketplace add 6ixGODD/mine-is-not-everyones
+/plugin install mine@mine-is-not-everyones
+```
+
+<details>
+<summary>Building from source</summary>
+
+Requires Rust 1.85:
+
+```sh
+cargo install --path . --locked
+./scripts/install.sh
+```
+
+</details>
 
 ## Quick start
 
+Examples use Skill names directly; invocation differs per Agent client.
+
 ### New repository
 
+Initialize Git, then initialize MINE:
+
 ```bash
+git init
 mine init
 ```
 
-Then open a supported coding agent and invoke:
+`mine init` only performs deterministic initialization; architecture, Plans, and implementation are the Skills' job.
+
+Open an Agent and state the requirement:
 
 ```text
-mine-arch <your requirements>
+mine-arch Build a local task-management CLI with import, export, and undo.
 ```
 
-`mine init` only establishes MINE-owned files, markers, configuration, templates, and agent integration. It does not scan the repository, write architecture, create plans, start agents, or implement code.
+Then:
+
+```text
+mine-plan-create
+mine-plan-exec <Plan path>
+mine-plan-review <Plan path>
+```
 
 ### Existing repository
 
-If the repository already contains a non-MINE `docs/design/`, rename or delete it first.
+If the repository already uses `docs/design/` for unrelated documents, rename or move it first.
 
 ```bash
 mine init
 ```
 
-Then establish a code-accurate baseline:
+Establish a Design baseline matching the current code:
 
 ```text
-mine-sync
+mine-sync the authentication and authorization subsystem
 ```
 
-For a large repository, provide a scope when possible:
+Then evolve the repository:
 
 ```text
-mine-sync the authentication, authorization, and identity persistence subsystems
-```
-
-With no scope, the agent is authorized to explore the repository broadly. The resulting token and runtime cost is accepted by the user who requested an unscoped sync.
-
-After synchronization, evolve the system through:
-
-```text
-mine-arch <new requirement>
+mine-arch Add Passkey login.
 mine-plan-create
-mine-plan-exec
-mine-plan-review
+mine-plan-exec <Plan path>
+mine-plan-review <Plan path>
 ```
 
-## Durable versus temporary state
+> For large repositories, scope `mine-sync`.
 
-Stable branches retain:
+## Repository model
 
-```text
-code
-tests
-configuration
-README.md
-README.zh-CN.md
-docs/design/
-.mine/config.toml
-AGENTS.md
-```
+MINE owns `docs/design/`, marked by `docs/design/.mine-design.toml`.
 
-Stable branches must not retain:
+During sync, current code, schemas, configuration, tests, and observable runtime behavior take precedence over stale Design, unless the user explicitly asks to preserve a design decision.
 
-```text
-docs/plan/
-execution graphs
-implementation reports
-review reports
-temporary design backups
-dev
-plan/*
-```
+Before rewriting Design, MINE creates a local, Git-ignored backup.
 
-See [the documentation index](docs/README.md) and [the user guide](docs/user-guide.md).
+`dev`, `plan/*`, `docs/plan/`, the execution graph, implementation reports, and review reports exist only during development and never enter a stable release.
 
-## Language
+## Review behavior
 
-- `README.md`: English source.
-- `README.zh-CN.md`: Chinese translation.
-- `docs/**`: English only.
+The Reviewer independently verifies the implementation and may directly fix narrowly scoped defects, strengthen tests, correct workflow issues, and unblock release closure, committing each fix separately, recording it in the review report, and revalidating.
 
-## Warning
+A compensating Plan is created only for large independent work, substantive Design change, major scope expansion, public-contract change, or work that cannot be completed safely in the current review.
 
-MINE assumes that repository owners accept strong conventions and are willing to let agents restructure design documentation, create managed branches, commit scoped changes, merge accepted plan branches into `dev`, and remove temporary MINE artifacts at release closure.
+## Authority boundaries
 
-It refuses arbitrary `reset --hard`, `git clean`, blind stash operations, force pushes, unbounded shell deletion, and writes outside the repository.
+MINE is for a single repository owner who accepts strong constraints and lets coding agents operate the repository under governance rules.
 
-MINE is opinionated because ambiguity is expensive.
+| MINE may | MINE never will |
+|---|---|
+| Rewrite inaccurate MINE-owned Design | Run arbitrary `git reset --hard` |
+| Create and use managed `dev` and `plan/*` branches | Run `git clean` |
+| Commit changes within the current Plan scope | Blind stash |
+| Merge reviewed work | Force push |
+| Clean up MINE's own temporary release artifacts | Rewrite public history |
+| | Delete unrelated branches or files |
+| | Run unbounded shell deletion |
+| | Write outside the repository |
+
+"Destructive" applies only to outdated MINE-owned Design and temporary process state.
+
+## Supported clients
+
+* Claude Code
+* Codex
+* Pi
+* OpenCode
+
+## Current status
+
+MINE is still early-stage and intentionally opinionated.
+
+Try it in a recoverable repository: read the generated Design, inspect the Git history, and verify the final stable output yourself.
+
+## Documentation
+
+* [Documentation index](docs/README.md)
+* [User guide](docs/user-guide.md)
+* [Design index](docs/design/index.md)
+
+## License
+
+MIT
