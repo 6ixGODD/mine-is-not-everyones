@@ -17,7 +17,7 @@
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use crossterm::style::{Color, SetForegroundColor};
 use crossterm::terminal::{self, disable_raw_mode, enable_raw_mode};
-use crossterm::{cursor, execute, queue, style::Print, terminal::ClearType};
+use crossterm::{cursor, queue, style::Print, terminal::ClearType};
 use std::io::{Write, stdout};
 
 use crate::domain::error::{MineError, MineResult};
@@ -129,17 +129,13 @@ fn run_selector(mut entries: Vec<Entry>) -> MineResult<Vec<Entry>> {
 
 fn selector_loop(entries: &mut [Entry], focus: &mut usize) -> MineResult<()> {
     let mut out = stdout();
+    // Record the row where the selector starts; every redraw returns here and
+    // clears downward, so frames replace each other instead of scrolling.
+    let start_row = cursor::position().ok().map(|p| p.1).unwrap_or(0);
     loop {
-        // Render.
-        let _ = execute!(
-            out,
-            cursor::MoveTo(0, cursor::position().ok().map(|p| p.1).unwrap_or(0))
-        );
-        // Simpler: just print lines and reposition each frame.
-        render_frame(&mut out, entries, *focus)?;
+        render_frame(&mut out, entries, *focus, start_row)?;
         out.flush().ok();
 
-        // Read a key.
         if !event::poll(std::time::Duration::from_millis(500)).unwrap_or(false) {
             continue;
         }
@@ -187,24 +183,24 @@ fn move_focus(entries: &[Entry], focus: &mut usize, delta: i32) {
     }
 }
 
-fn render_frame(out: &mut std::io::Stdout, entries: &[Entry], focus: usize) -> MineResult<()> {
-    // Move cursor up to redraw the same block. We render `entries.len()+2`
-    // lines (header + entries + footer). Track how many we printed last frame
-    // is hard in raw mode without absolute positioning; simpler: move up by
-    // the frame height each redraw.
-    let height = entries.len() as u16 + 3;
+fn render_frame(
+    out: &mut std::io::Stdout,
+    entries: &[Entry],
+    focus: usize,
+    start_row: u16,
+) -> MineResult<()> {
+    // Return to the saved start row and wipe everything below, then redraw
+    // the whole frame in place. This is what prevents the infinite scroll.
     let _ = queue!(
         out,
-        cursor::MoveUp(height.saturating_sub(1)),
-        terminal::Clear(ClearType::FromCursorDown),
+        cursor::MoveTo(0, start_row),
+        terminal::Clear(ClearType::FromCursorDown)
     );
     let _ = queue!(out, Print("Select coding agents to install MINE into:\r\n"));
     for (i, e) in entries.iter().enumerate() {
         let checkbox = if e.checked { "[*]" } else { "[ ]" };
-        let line = format!("{checkbox} {}\r\n", e.display);
         let focused = i == focus;
         if !e.detected {
-            // Greyed out, undetected.
             let _ = queue!(
                 out,
                 SetForegroundColor(Color::DarkGrey),
@@ -215,14 +211,14 @@ fn render_frame(out: &mut std::io::Stdout, entries: &[Entry], focus: usize) -> M
             let _ = queue!(
                 out,
                 SetForegroundColor(Color::White),
-                Print(line),
+                Print(format!("{checkbox} {}\r\n", e.display)),
                 SetForegroundColor(Color::Reset)
             );
         } else {
             let _ = queue!(
                 out,
                 SetForegroundColor(Color::Grey),
-                Print(line),
+                Print(format!("{checkbox} {}\r\n", e.display)),
                 SetForegroundColor(Color::Reset)
             );
         }

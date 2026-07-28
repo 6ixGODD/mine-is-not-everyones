@@ -134,14 +134,27 @@ fn mine_init_is_idempotent() {
 }
 
 #[test]
-fn mine_init_refuses_legacy_unmarked_design() {
+fn mine_init_backs_up_legacy_unmarked_design() {
     let tmp = tempfile::tempdir().unwrap();
     init_git_repo(tmp.path());
     // Pre-place a legacy unmarked docs/design/
     std::fs::create_dir_all(tmp.path().join("docs/design")).unwrap();
     std::fs::write(tmp.path().join("docs/design/old.md"), "legacy").unwrap();
     let (exit, env) = run(&["init", "--format", "json"], tmp.path());
-    assert_ne!(exit, 0, "must refuse legacy unmarked design: {env}");
+    assert_eq!(exit, 0, "init backs up legacy design and continues: {env}");
+    // Legacy content moved to a backup directory.
+    let backups: Vec<_> = std::fs::read_dir(tmp.path().join("docs"))
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().starts_with("design-backup-"))
+        .collect();
+    assert_eq!(backups.len(), 1, "one design backup created");
+    assert_eq!(
+        std::fs::read_to_string(backups[0].path().join("old.md")).unwrap(),
+        "legacy"
+    );
+    // Fresh MINE-managed design root created.
+    assert!(tmp.path().join("docs/design/.mine-design.toml").exists());
 }
 
 #[test]

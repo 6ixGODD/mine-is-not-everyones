@@ -38,7 +38,7 @@ Final names may change during implementation. Skills and documentation are regen
 - initializes or validates `.mine/config.toml`;
 - creates a repository UUID when unmanaged;
 - creates `docs/design/` scaffold and `.mine-design.toml` when absent;
-- refuses unmarked or foreign-owned existing `docs/design/`;
+- backs up an unmarked or foreign-owned existing `docs/design/` to `docs/design-backup-<timestamp>/` and creates a fresh managed root;
 - creates MINE sections in `AGENTS.md` without erasing unrelated content;
 - configures supported agents when requested;
 - initializes repository version from existing MINE state, reliable root version evidence, or `0.1.0`;

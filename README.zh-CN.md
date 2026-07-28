@@ -138,7 +138,7 @@ mine-plan-review <Plan 路径>
 
 ### 已有仓库
 
-若仓库已用 `docs/design/` 存放无关文档，请先重命名或移走该目录。
+若仓库已用 `docs/design/` 存放无关文档，`mine init` 会将其备份到 `docs/design-backup-<时间戳>/` 并创建新的受管理根目录。
 
 ```bash
 mine init

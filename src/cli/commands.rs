@@ -253,6 +253,7 @@ fn init(parsed: &crate::cli::ParsedArgs, _rest: &[String]) -> HandlerResult {
                 crate::application::init_service::InitAction::Created(p) => json!({"kind":"created","path": p.display().to_string()}),
                 crate::application::init_service::InitAction::Preserved(p) => json!({"kind":"preserved","path": p.display().to_string()}),
                 crate::application::init_service::InitAction::CreatedSection(p) => json!({"kind":"created-section","path": p.display().to_string()}),
+                crate::application::init_service::InitAction::BackedUpDesign { backup_path } => json!({"kind":"backed-up-design","backup_path": backup_path.display().to_string()}),
             }).collect::<Vec<_>>(),
         }));
     env = env.with_revision(0, 0); // init is not a graph mutation
@@ -1575,10 +1576,7 @@ fn setup(_parsed: &crate::cli::ParsedArgs, rest: &[String]) -> HandlerResult {
     let report = crate::setup::run_setup(&args).map_err(|e| HandlerError::from_mine(&e))?;
     let env_data =
         envelope_for("setup", None).with_data(serde_json::to_value(&report).unwrap_or(Value::Null));
-    let mut lines = vec![HumanLine::Section(format!(
-        "mine setup: {}",
-        report.version_note
-    ))];
+    let mut lines = vec![HumanLine::Section("mine setup done".to_string())];
     if !report.installed.is_empty() {
         lines.push(HumanLine::Field {
             key: "  installed".to_string(),

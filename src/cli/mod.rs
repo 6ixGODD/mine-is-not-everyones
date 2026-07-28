@@ -38,6 +38,9 @@ pub enum OutcomePayload {
         envelope: ErrorEnvelope,
         message: String,
     },
+    /// Informational output (help, version) printed to stdout with exit 0.
+    /// Distinct from Success (no envelope) and Error (no "error:" prefix).
+    Info { stdout_text: String },
 }
 
 /// A handler error: a typed code + message + exit code + optional details.
@@ -69,6 +72,27 @@ impl HandlerError {
             code: "MINE_USAGE",
             message: message.into(),
             exit_code: exit_code::USAGE,
+            details: serde_json::Value::Null,
+        }
+    }
+
+    /// Signals a help request (`--help`/`-h`). Dispatch renders usage to
+    /// stdout with exit 0 (not an error).
+    pub fn help() -> Self {
+        Self {
+            code: "MINE_HELP",
+            message: String::new(),
+            exit_code: exit_code::SUCCESS,
+            details: serde_json::Value::Null,
+        }
+    }
+
+    /// Signals a version request (`--version`/`-V`).
+    pub fn version() -> Self {
+        Self {
+            code: "MINE_VERSION",
+            message: String::new(),
+            exit_code: exit_code::SUCCESS,
             details: serde_json::Value::Null,
         }
     }
@@ -135,7 +159,8 @@ pub fn parse(argv: &[String]) -> Result<ParsedArgs, HandlerError> {
             s if s.starts_with("--repo=") => {
                 repo = Some(PathBuf::from(&s["--repo=".len()..]));
             }
-            "--help" | "-h" => return Err(HandlerError::usage("help requested")),
+            "--help" | "-h" => return Err(HandlerError::help()),
+            "--version" | "-V" => return Err(HandlerError::version()),
             other => tokens.push(other.to_string()),
         }
         i += 1;
@@ -167,8 +192,11 @@ pub fn dispatch(argv: &[String], program: &str) -> Outcome {
     let parsed = match parse(argv) {
         Ok(p) => p,
         Err(e) => {
-            if e.code == "MINE_USAGE" && e.message == "help requested" {
+            if e.code == "MINE_HELP" {
                 return usage_outcome(program);
+            }
+            if e.code == "MINE_VERSION" {
+                return version_outcome();
             }
             return error_outcome("usage", e, None, None);
         }
@@ -275,32 +303,49 @@ fn error_outcome(
 }
 
 fn usage_outcome(program: &str) -> Outcome {
-    let msg = format!(
-        "usage: {program} <command> [options]\n\
-         \nCommands:\n  mine init              initialize repository\n  \
-         mine status             show repository and graph status\n  \
-         mine doctor             diagnose MINE configuration\n  \
-         mine workspace open|status|close\n  \
-         mine graph validate|render|status|ready|wave|show\n  \
-         mine plan add|show|start|implemented|accept|reject\n  \
-         mine design backup|validate|status\n  \
-         mine repository version show|suggest|set\n\nOptions:\n  \
-         --format json|human     output format (default human)\n  \
-         --quiet                 suppress non-error human output\n  \
-         --no-color              plain text (default)\n  \
-         --repo <path>           repository root override\n"
-    );
-    error_outcome(
-        "usage",
-        HandlerError {
-            code: "MINE_USAGE",
-            message: msg,
-            exit_code: exit_code::USAGE,
-            details: serde_json::Value::Null,
-        },
-        None,
-        None,
-    )
+    // Fixed-width command column so descriptions line up.
+    let msg = [
+        format!("Usage: {program} <command> [options]"),
+        "".to_string(),
+        "Commands:".to_string(),
+        "  init                Initialize a repository for MINE".to_string(),
+        "  status              Show repository and execution-graph status".to_string(),
+        "  doctor              Diagnose MINE configuration".to_string(),
+        "  setup               Install MINE into coding agents (interactive)".to_string(),
+        "  update              Update the mine binary to the latest release".to_string(),
+        "  uninstall           Remove MINE from all agents and this machine".to_string(),
+        "  workspace open|status|close".to_string(),
+        "  graph validate|render|status|ready|wave|show".to_string(),
+        "  plan add|show|start|implemented|accept|reject|release".to_string(),
+        "  design backup|validate|status".to_string(),
+        "  agent install|uninstall|status|config".to_string(),
+        "  repository version show|suggest|set".to_string(),
+        "  mcp serve".to_string(),
+        "".to_string(),
+        "Options:".to_string(),
+        "  --format json|human  Output format (default: human)".to_string(),
+        "  --quiet              Suppress non-error human output".to_string(),
+        "  --no-color           Plain text (default)".to_string(),
+        "  --repo <path>        Repository root override".to_string(),
+        "  --help, -h           Show this help".to_string(),
+        "  --version, -V        Show the mine version".to_string(),
+    ]
+    .join("\n")
+        + "\n";
+    Outcome {
+        command: "usage",
+        exit_code: exit_code::SUCCESS,
+        payload: OutcomePayload::Info { stdout_text: msg },
+    }
+}
+
+fn version_outcome() -> Outcome {
+    let msg = format!("mine {}\n", env!("CARGO_PKG_VERSION"));
+    Outcome {
+        command: "version",
+        exit_code: exit_code::SUCCESS,
+        payload: OutcomePayload::Info { stdout_text: msg },
+    }
 }
 
 /// Renders an [`Outcome`] to `(stdout_text, stderr_text)`. On success, output
@@ -330,6 +375,7 @@ pub fn render(outcome: &Outcome, json: bool, quiet: bool) -> (String, String) {
                 (String::new(), format!("error: {message}\n"))
             }
         }
+        OutcomePayload::Info { stdout_text } => (stdout_text.clone(), String::new()),
     }
 }
 

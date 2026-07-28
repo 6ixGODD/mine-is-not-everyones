@@ -55,25 +55,43 @@ pub fn init_report(outcome: &InitOutcome) -> Vec<HumanLine> {
         },
     });
     for a in &outcome.actions {
-        let kind = match a {
-            crate::application::init_service::InitAction::Created(p)
-                if p.ends_with("AGENTS.md") =>
-            {
-                "created-section"
+        match a {
+            crate::application::init_service::InitAction::BackedUpDesign { backup_path } => {
+                lines.push(HumanLine::Field {
+                    key: "  backed up non-MINE design to".to_string(),
+                    value: backup_path.display().to_string(),
+                });
             }
-            crate::application::init_service::InitAction::Created(_) => "created",
-            crate::application::init_service::InitAction::Preserved(_) => "preserved",
-            crate::application::init_service::InitAction::CreatedSection(_) => "created-section",
-        };
-        let path = match a {
-            crate::application::init_service::InitAction::Created(p)
-            | crate::application::init_service::InitAction::Preserved(p)
-            | crate::application::init_service::InitAction::CreatedSection(p) => p,
-        };
-        lines.push(HumanLine::Action {
-            kind: kind.to_string(),
-            path: path.display().to_string(),
-        });
+            other => {
+                let kind = match other {
+                    crate::application::init_service::InitAction::Created(p)
+                        if p.ends_with("AGENTS.md") =>
+                    {
+                        "created-section"
+                    }
+                    crate::application::init_service::InitAction::Created(_) => "created",
+                    crate::application::init_service::InitAction::Preserved(_) => "preserved",
+                    crate::application::init_service::InitAction::CreatedSection(_) => {
+                        "created-section"
+                    }
+                    crate::application::init_service::InitAction::BackedUpDesign { .. } => {
+                        unreachable!()
+                    }
+                };
+                let path = match other {
+                    crate::application::init_service::InitAction::Created(p)
+                    | crate::application::init_service::InitAction::Preserved(p)
+                    | crate::application::init_service::InitAction::CreatedSection(p) => p,
+                    crate::application::init_service::InitAction::BackedUpDesign { .. } => {
+                        unreachable!()
+                    }
+                };
+                lines.push(HumanLine::Action {
+                    kind: kind.to_string(),
+                    path: path.display().to_string(),
+                });
+            }
+        }
     }
     lines
 }

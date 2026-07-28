@@ -129,7 +129,7 @@ fn init_in_absent_repo_is_idempotent_and_json_stable() {
 }
 
 #[test]
-fn init_refuses_legacy_unmarked_design_root() {
+fn init_backs_up_legacy_unmarked_design_root() {
     let root = tempfile::tempdir().unwrap();
     init_git_repo(root.path());
     let repo = root.path().to_str().unwrap();
@@ -141,10 +141,32 @@ fn init_refuses_legacy_unmarked_design_root() {
     .unwrap();
 
     let outcome = cli::dispatch(&run(repo, &["init", "--format", "json"]), "mine");
-    assert_eq!(outcome.exit_code, 3, "namespace gate failure -> exit 3");
+    assert_eq!(outcome.exit_code, 0, "init backs up and continues -> exit 0");
     let env = envelope_json(&outcome);
-    assert_eq!(env["ok"], false);
-    assert_eq!(env["error"]["code"], "MINE_DESIGN_NAMESPACE_CONFLICT");
+    assert_eq!(env["ok"], true);
+    // A backed-up-design action was recorded.
+    let actions = env["data"]["actions"].as_array().unwrap();
+    let backed_up = actions
+        .iter()
+        .any(|a| a["kind"] == "backed-up-design");
+    assert!(backed_up, "init recorded a backed-up-design action");
+    // The legacy content was moved into a backup directory.
+    let docs_dir = root.path().join("docs");
+    let backups: Vec<_> = std::fs::read_dir(&docs_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .starts_with("design-backup-")
+        })
+        .collect();
+    assert_eq!(backups.len(), 1, "exactly one design backup created");
+    let legacy_preserved =
+        std::fs::read_to_string(backups[0].path().join("legacy.md")).unwrap();
+    assert_eq!(legacy_preserved, "legacy");
+    // A fresh MINE-managed design root was created.
+    assert!(root.path().join("docs").join("design").join(".mine-design.toml").exists());
 }
 
 #[test]

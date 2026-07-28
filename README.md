@@ -138,7 +138,7 @@ mine-plan-review <Plan path>
 
 ### Existing repository
 
-If the repository already uses `docs/design/` for unrelated documents, rename or move it first.
+If the repository already uses `docs/design/` for unrelated documents, `mine init` backs it up to `docs/design-backup-<timestamp>/` and creates a fresh managed root.
 
 ```bash
 mine init

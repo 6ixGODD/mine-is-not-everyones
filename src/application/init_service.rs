@@ -81,6 +81,9 @@ pub enum InitAction {
     Preserved(PathBuf),
     /// A MINE section was appended to an existing file.
     CreatedSection(PathBuf),
+    /// A non-MINE docs/design/ was moved to a timestamped backup before
+    /// creating a fresh MINE-managed design root.
+    BackedUpDesign { backup_path: PathBuf },
 }
 
 /// The structured outcome of `mine init`.
@@ -150,14 +153,28 @@ impl<'a> InitService<'a> {
             None
         };
 
-        let state = classify(
+        let state = match classify(
             &design_dir,
             &marker_path,
             design_dir_exists,
             marker_file_exists,
             marker.as_ref(),
             existing_identity.as_ref().map(|i| i.repository_id.as_str()),
-        )?;
+        ) {
+            Ok(s) => s,
+            Err(MineError::DesignNamespaceConflict { .. }) => {
+                // The user asked for init to back up an existing non-MINE
+                // docs/design/ rather than abort. Move it aside to a
+                // timestamped backup, then proceed as if absent.
+                let backup = backup_conflicting_design(&design_dir, self.clock)?;
+                actions.push(InitAction::BackedUpDesign {
+                    backup_path: backup,
+                });
+                // Re-classify: design_dir no longer exists.
+                DesignRootState::Absent
+            }
+            Err(e) => return Err(e),
+        };
 
         let marker_repository_id = match state {
             DesignRootState::Absent => {
@@ -243,6 +260,30 @@ fn read_existing_identity(config_path: &Path) -> MineResult<Option<RepositoryIde
 fn read_root_version(cargo_path: &Path) -> Option<String> {
     let content = std::fs::read_to_string(cargo_path).ok()?;
     root_version_from_cargo_manifest(&content)
+}
+
+/// Moves an existing non-MINE `docs/design/` aside to a timestamped backup
+/// so initialization can create a fresh MINE-managed design root.
+///
+/// The backup destination is `docs/design-backup-<UTC timestamp>/` next to
+/// the design directory. If a name collision occurs, a numeric suffix is
+/// appended. The whole directory is moved (renamed) to preserve all contents
+/// atomically.
+fn backup_conflicting_design(design_dir: &Path, clock: &dyn Clock) -> MineResult<PathBuf> {
+    let parent = design_dir
+        .parent()
+        .ok_or_else(|| std::io::Error::other("design directory has no parent"))?;
+    let timestamp = clock.now_utc_rfc3339();
+    // RFC3339 contains ':' which is invalid in Windows filenames; sanitize.
+    let safe_ts = timestamp.replace(':', "-");
+    let mut backup = parent.join(format!("design-backup-{safe_ts}"));
+    let mut suffix = 1;
+    while backup.exists() {
+        backup = parent.join(format!("design-backup-{safe_ts}-{suffix}"));
+        suffix += 1;
+    }
+    std::fs::rename(design_dir, &backup).map_err(MineError::Io)?;
+    Ok(backup)
 }
 
 fn create_design_scaffold(design_dir: &Path) -> MineResult<()> {

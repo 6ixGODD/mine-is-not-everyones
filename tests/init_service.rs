@@ -170,7 +170,7 @@ fn init_is_idempotent_when_managed() {
 }
 
 #[test]
-fn legacy_unmarked_design_dir_is_rejected_without_mutation() {
+fn legacy_unmarked_design_dir_is_backed_up_and_replaced() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
     fs::create_dir_all(root.join("docs").join("design")).unwrap();
@@ -180,32 +180,53 @@ fn legacy_unmarked_design_dir_is_rejected_without_mutation() {
     )
     .unwrap();
 
-    let err = run_init(root).expect_err("legacy root is rejected");
-    assert_eq!(err.code(), "MINE_DESIGN_NAMESPACE_CONFLICT");
+    let outcome = run_init(root).expect("legacy root is backed up and init proceeds");
+    assert!(outcome.actions.iter().any(|a| matches! {
+        a,
+        InitAction::BackedUpDesign { .. }
+    }));
 
-    assert!(!config_path(root).exists());
-    assert!(!marker_path(root).exists());
+    // MINE-managed root created.
+    assert!(marker_path(root).exists());
+    assert!(config_path(root).exists());
+    // Legacy content preserved in a backup directory.
+    let backups: Vec<_> = fs::read_dir(root.join("docs"))
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().starts_with("design-backup-"))
+        .collect();
+    assert_eq!(backups.len(), 1);
     assert_eq!(
-        fs::read_to_string(root.join("docs").join("design").join("legacy.md")).unwrap(),
+        fs::read_to_string(backups[0].path().join("legacy.md")).unwrap(),
         "legacy architecture notes"
     );
 }
 
 #[test]
-fn foreign_marker_is_rejected_without_mutation() {
+fn foreign_marker_is_backed_up_and_replaced() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
     write_marker(root, "some-id", "OtherTool", "2026-07-23T00:00:00Z");
-    let marker_before = fs::read_to_string(marker_path(root)).unwrap();
 
-    let err = run_init(root).expect_err("foreign marker is rejected");
-    assert_eq!(err.code(), "MINE_DESIGN_NAMESPACE_CONFLICT");
+    let outcome = run_init(root).expect("foreign-marker root is backed up and init proceeds");
+    assert!(outcome.actions.iter().any(|a| matches! {
+        a,
+        InitAction::BackedUpDesign { .. }
+    }));
 
-    assert_eq!(
-        fs::read_to_string(marker_path(root)).unwrap(),
-        marker_before
-    );
-    assert!(!config_path(root).exists());
+    // Fresh MINE-managed marker + config created.
+    assert!(marker_path(root).exists());
+    assert!(config_path(root).exists());
+    // The foreign marker was moved into the backup, not destroyed.
+    let backups: Vec<_> = fs::read_dir(root.join("docs"))
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().starts_with("design-backup-"))
+        .collect();
+    assert_eq!(backups.len(), 1);
+    let backed_up_marker =
+        fs::read_to_string(backups[0].path().join(".mine-design.toml")).unwrap();
+    assert!(backed_up_marker.contains("OtherTool"));
 }
 
 #[test]

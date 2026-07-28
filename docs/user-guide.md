@@ -37,7 +37,7 @@ It performs deterministic setup only:
 
 It does **not** scan source code, write architecture, create `docs/plan/`, create development branches, invoke an agent, write business code, commit, merge, or publish.
 
-## Design namespace conflict
+## Design namespace handling
 
 MINE owns this path:
 
@@ -51,9 +51,7 @@ A managed tree contains:
 docs/design/.mine-design.toml
 ```
 
-If an old repository already stores unrelated documentation in `docs/design/`, rename or delete it before running `mine init`.
-
-MINE intentionally provides no automatic compatibility migration for arbitrary legacy layouts. Initialization must fail rather than guess.
+If a repository already stores unrelated documentation in `docs/design/`, `mine init` moves the existing directory aside to `docs/design-backup-<UTC timestamp>/` and creates a fresh MINE-managed design root. The legacy contents are preserved in the backup; MINE does not guess how to migrate arbitrary legacy layouts, but it does not abort the initialization either.
 
 ## New repository workflow
 
@@ -83,7 +81,7 @@ Repeat execution and review until every plan is accepted.
 
 ### 1. Resolve the namespace
 
-If `docs/design/` contains legacy non-MINE documentation, rename or delete it.
+If `docs/design/` contains legacy non-MINE documentation, `mine init` backs it up to `docs/design-backup-<timestamp>/` and creates a fresh managed root.
 
 ### 2. Initialize MINE
 
