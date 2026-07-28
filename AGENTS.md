@@ -104,4 +104,4 @@ Rust is the only implementation language for the `mine` core. Use the managed st
 - Never edit `docs/plan/execution-graph.toml` or `docs/plan/execution-graph.md` directly.
 - Register plans and perform lifecycle transitions only through the installed `mine` MCP tools or `mine --format json` CLI.
 - Carry the observed revision into every write operation and stop on revision conflicts.
-- Until the `mine` CLI is wired (Plan 03), graph state transitions are performed by the independent bootstrap reviewer; implementation agents must not self-grant `ACCEPTED` or hand-edit graph state.
+- Until the `mine` CLI is wired, graph state transitions are performed by the independent bootstrap reviewer; implementation agents must not self-grant `ACCEPTED` or hand-edit graph state.

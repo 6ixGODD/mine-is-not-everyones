@@ -1,7 +1,7 @@
 // Enforce `AGENTS.md`'s "Business code must not use `unsafe`" at compile time.
 #![forbid(unsafe_code)]
 
-//! Installation and update orchestration — Plan 07-1 rework.
+//! Installation and update orchestration with transactional backup/rollback.
 //!
 //! The install is a bounded transaction (see [`crate::agent_setup::transaction`]):
 //!

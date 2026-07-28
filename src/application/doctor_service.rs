@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 
 //! Doctor service for agent diagnostics: the bridge between the existing
-//! `mine doctor` repository checks and the Plan 07 agent diagnostics. It
+//! `mine doctor` repository checks and the agent diagnostics. It
 //! produces a combined machine-readable report; the CLI `mine doctor` handler
 //! calls this to append the agent section.
 //!

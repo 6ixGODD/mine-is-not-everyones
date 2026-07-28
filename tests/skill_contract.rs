@@ -9,8 +9,8 @@
 //! the `mine` binary (the CLI is covered by `tests/cli.rs`, the MCP server by
 //! `tests/mcp.rs`).
 //!
-//! Plan 06 rewrote the Skills to be MCP-first / CLI-fallback against the twelve
-//! accepted MCP tools delivered by Plan 05-1. The tests below verify that every
+//! Skills are MCP-first / CLI-fallback against the twelve
+//! accepted MCP tools. The tests below verify that every
 //! MCP tool name a Skill references exists in the accepted twelve-tool surface,
 //! and that no Skill invents an unimplemented CLI command.
 
@@ -226,7 +226,7 @@ fn mine_arch_is_requirement_first() {
     );
 }
 
-/// The twelve accepted MCP tool names exposed by `mine mcp serve` (Plan 05-1).
+/// The twelve accepted MCP tool names exposed by `mine mcp serve`.
 /// Every MCP tool name referenced by a Skill MUST be in this set.
 const ACCEPTED_MCP_TOOLS: &[&str] = &[
     "mine_workspace_status",
@@ -245,8 +245,8 @@ const ACCEPTED_MCP_TOOLS: &[&str] = &[
 
 #[test]
 fn skills_reference_only_accepted_mcp_tools() {
-    // Plan 06: Skills are MCP-first / CLI-fallback. Every MCP tool name a Skill
-    // references must exist in the accepted twelve-tool surface (Plan 05-1).
+    // Skills are MCP-first / CLI-fallback. Every MCP tool name a Skill
+    // references must exist in the accepted twelve-tool surface.
     // A stale or invented tool name fails the gate.
     let accepted: std::collections::HashSet<&str> = ACCEPTED_MCP_TOOLS.iter().copied().collect();
     for s in [
@@ -271,7 +271,7 @@ fn skills_reference_only_accepted_mcp_tools() {
 
 #[test]
 fn planning_skills_use_mcp_first_with_cli_fallback() {
-    // Plan 06: the three planning Skills must be MCP-first / CLI-fallback.
+    // The three planning Skills must be MCP-first / CLI-fallback.
     // Each must reference at least one accepted MCP tool AND the `mine` CLI.
     for s in ["mine-plan-create", "mine-plan-exec", "mine-plan-review"] {
         let body = skill(s);
@@ -311,10 +311,10 @@ fn regex_mcp_tool_names(body: &str) -> Vec<&str> {
 #[test]
 fn skills_do_not_invent_imaginary_cli_commands() {
     // The actually-implemented CLI command groups (verified against the built
-    // binary). `mine agent` (Plan 07-1) and `mine dist` (Plan 08-1/08-2) are
+    // binary). `mine agent` and `mine dist` are
     // now implemented and accepted; `mine doctor --agents <scope>` (Plan
-    // 07-1, corrected for stable-tree compatibility by Plan 12) is a real,
-    // accepted flag. This test no longer bans them (Plan 12 correction of a
+    // diagnostics, corrected for stable-tree compatibility) is a real,
+    // accepted flag. This test no longer bans them (correction of a
     // stale assertion written before those commands existed).
     let accepted_cli = [
         "mine init",
@@ -395,7 +395,7 @@ fn user_guide_names_design_root_progressively_and_warns_on_namespace_conflict() 
 
 #[test]
 fn reviewer_may_correct_narrow_findings_directly_without_a_compensating_plan() {
-    // Plan 12 correction: the review workflow must not be purely formalistic
+    // The review workflow must not be purely formalistic
     // ("reviewers may never edit code"), which previously forced a new
     // compensating plan for every narrow finding. The reviewer Skill must
     // explicitly authorize direct, localized reviewer fixes (committed
@@ -461,5 +461,30 @@ fn plan_create_does_not_force_a_new_plan_for_narrow_corrections() {
             || create.contains("not a new plan"),
         "mine-plan-create must not force a new compensating plan for a narrow, local, \
          fully-verifiable correction"
+    );
+}
+
+#[test]
+fn review_skill_requires_stale_plan_reference_scan_at_release_closure() {
+    let review = skill("mine-plan-review");
+    assert!(
+        review.contains("scan-plan-refs.sh --check"),
+        "mine-plan-review must run the stale-plan-reference scanner before stable integration"
+    );
+    assert!(
+        review.contains("mine-release-allow-plan-reference:"),
+        "mine-plan-review must document narrowly-scoped fixture exemptions"
+    );
+
+    // The scanner is bundled alongside the Skill under references/.
+    let scanner = repo_root().join("skills/mine-plan-review/references/scan-plan-refs.sh");
+    let source = read(&scanner);
+    assert!(
+        source.contains("git ls-files -z"),
+        "the scanner must inspect tracked files rather than an uncontrolled filesystem walk"
+    );
+    assert!(
+        source.contains("--check") && source.contains("docs/plan"),
+        "the scanner must offer a failing release gate while excluding the temporary plan workspace"
     );
 }

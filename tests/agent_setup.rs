@@ -1,7 +1,7 @@
 // Enforce no `unsafe` in MINE-owned test crates.
 #![forbid(unsafe_code)]
 
-//! Plan 07-1 integration tests: transactional installation, mandatory backup,
+//! Integration tests: transactional installation, mandatory backup,
 //! explicit-root isolation, and selective port verification.
 //!
 //! Every test drives the real `mine` binary via `cli::dispatch` against an

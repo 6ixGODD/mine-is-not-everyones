@@ -197,7 +197,7 @@ pub fn is_derived_ready(ws: &PlanWorkspace, plan_id: &str) -> MineResult<bool> {
 }
 
 /// Returns the READY frontier: all plans currently `READY`. (Does not mutate;
-/// derived readiness recomputation is a Plan 03 service concern.)
+/// derived readiness recomputation is a service concern.)
 #[must_use]
 pub fn ready_frontier(ws: &PlanWorkspace) -> Vec<String> {
     ws.plans

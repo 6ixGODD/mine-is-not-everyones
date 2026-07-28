@@ -61,7 +61,15 @@ fn run_doctor(
     } else {
         stderr
     };
-    serde_json::from_str(&body).unwrap_or(serde_json::Value::Null)
+    let mut envelope: serde_json::Value =
+        serde_json::from_str(&body).unwrap_or(serde_json::Value::Null);
+    if envelope["data"]["agents"].is_null() {
+        let agents = envelope["error"]["details"]["agents"].clone();
+        if !agents.is_null() {
+            envelope["data"]["agents"] = agents;
+        }
+    }
+    envelope
 }
 
 const FOUR_AGENTS: &[&str] = &["claude-code", "codex", "pi", "opencode"];

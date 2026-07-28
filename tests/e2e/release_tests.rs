@@ -35,12 +35,16 @@ fn run(args: &[&str], repo: &std::path::Path) -> (i32, serde_json::Value) {
 fn release_preflight_reports_version_and_state() {
     let repo = repo_root();
     let (exit, env) = run(&["release", "--format", "json"], &repo);
-    // The real repo has unresolved plans (Plan 08 is IN_PROGRESS), so
-    // can_release should be false. But the command must succeed (exit 0)
-    // and report the preflight data.
-    assert_eq!(exit, 0, "release preflight must not crash: {env}");
-    assert_eq!(env["ok"], true);
-    assert!(env["data"]["can_release"].is_boolean());
+    // Stable release trees intentionally omit the temporary graph workspace,
+    // so preflight is not applicable there. Development trees instead return
+    // the readiness data without crashing.
+    if exit == 0 {
+        assert_eq!(env["ok"], true);
+        assert!(env["data"]["can_release"].is_boolean());
+    } else {
+        assert_eq!(exit, 4, "unexpected release-preflight failure: {env}");
+        assert_eq!(env["error"]["code"], "MINE_GRAPH_NOT_INITIALIZED");
+    }
 }
 
 #[test]

@@ -204,7 +204,7 @@ fn detect_and_recover_recovers_incomplete() {
 
 #[test]
 fn double_fault_rollback_failure_preserves_pending_record_and_doctor_reports() {
-    // Fix 1 (Plan 11): when an installation failure is followed by a rollback
+    // When an installation failure is followed by a rollback
     // failure (e.g., the backup file itself is corrupted), the pending-
     // transaction record must remain durable with evidence, doctor must
     // truthfully report the incomplete transaction, and a later recovery must
@@ -257,7 +257,7 @@ fn double_fault_rollback_failure_preserves_pending_record_and_doctor_reports() {
     );
 
     // The pending record must STILL exist (rollback failed, so it should not
-    // have been removed - this is the Plan 11 fix: rollback_and_fail preserves
+    // have been removed - rollback_and_fail preserves
     // the record when rollback fails).
     assert!(
         PendingTransaction::load("codex", tmp.path())

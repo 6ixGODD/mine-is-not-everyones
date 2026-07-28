@@ -5,7 +5,7 @@
 //!
 //! Destinations are derived from the official client documentation (see the
 //! module-level docs in [`super::mod`] for the research register). The critical
-//! Fix 3 (Plan 07-1): explicit `--config-root` isolation. There are TWO
+//! Explicit `--config-root` isolation. There are TWO
 //! separate, never-mixed construction paths for the environment:
 //!
 //! - [`Env::isolated`] — built when an explicit `--config-root` is supplied.
@@ -17,7 +17,7 @@
 //!   use). It reads the real process environment and the platform home dir.
 //!
 //! These constructors are kept separate so an accidental partial override
-//! (the rejected Plan 07's bug) cannot recur: an isolated env has an empty
+//! cannot recur: an isolated env has an empty
 //! override map by construction.
 
 use std::path::PathBuf;
@@ -256,7 +256,7 @@ mod tests {
     #[test]
     fn real_env_constructor_distinct_from_isolated() {
         // real_env reads the live environment; isolated does not. They are
-        // separate constructors (the rejected Plan 07 mixed them).
+        // separate constructors (mixed envs are a bug source).
         let isol = Env::isolated(PathBuf::from("/tmp/x"));
         assert!(isol.isolated);
         // real_env() is not called here to keep tests hermetic; its distinction

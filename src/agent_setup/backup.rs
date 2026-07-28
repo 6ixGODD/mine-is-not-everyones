@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 
 //! Mandatory configuration backup before any Agent config mutation — Fix 1
-//! (Plan 07-1).
+//! Transactional agent-setup backup: mandatory exact-byte configuration backup before mutation.
 //!
 //! Every structured external configuration file is backed up before its first
 //! mutation by an install or update:

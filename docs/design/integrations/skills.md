@@ -107,6 +107,7 @@ It:
 - independently inspects design, plan, commits, code, tests, and runtime behavior;
 - accepts or rejects through MINE;
 - may apply only unambiguous local fixes under strict rules;
+- before final stable integration, runs the tracked-implementation stale-plan-reference scan, rewrites historical comments as durable contracts, and records narrowly scoped fixture exemptions;
 - creates compensation plans for material failures;
 - merges an accepted plan branch into `dev` and deletes the accepted local branch when integration checks pass;
 - does not preserve rejected behavior with compatibility shims by default.

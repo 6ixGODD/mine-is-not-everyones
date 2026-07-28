@@ -68,7 +68,7 @@ pub fn exit_code_for(err: &MineError) -> i32 {
         | MineError::WriteScopeConflict { .. } => exit_code::VALIDATION,
         // Revision / lock conflicts.
         MineError::RevisionConflict { .. } | MineError::LockTimeout { .. } => exit_code::CONFLICT,
-        // Plan 07-1: agent installer path-escape / backup-failed are gate
+        // Agent installer path-escape / backup-failed are gate
         // failures (write denied or mutation blocked by a failed backup).
         MineError::AgentPathEscape { .. }
         | MineError::AgentUnsupported { .. }

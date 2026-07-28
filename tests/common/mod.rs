@@ -1,7 +1,7 @@
 // Enforce no `unsafe` in shared test helpers.
 #![forbid(unsafe_code)]
 
-//! Shared helpers for Plan 09 (`mine plan release` and
+//! Shared helpers for `mine plan release` and
 //! `mine plan rewire-compensation`) integration tests.
 //!
 //! Each test builds an ISOLATED TEMPORARY repository seeded with a controlled
@@ -81,10 +81,9 @@ pub fn seeded_repo(plans: Vec<PlanNode>) -> (tempfile::TempDir, PathBuf) {
     let cfg = mine::cli::context::load_config(&manifest).expect("real config exists");
     std::fs::write(repo.join(".mine/config.toml"), cfg.to_toml()).unwrap();
 
-    let real_graph: PlanWorkspace = toml::from_str(
-        &std::fs::read_to_string(manifest.join("docs/plan/execution-graph.toml")).unwrap(),
-    )
-    .unwrap();
+    let real_graph: PlanWorkspace =
+        toml::from_str(include_str!("../fixtures/development-execution-graph.toml"))
+            .expect("development graph fixture parses");
     let mut ws = real_graph;
     ws.plans = plans;
     std::fs::write(
@@ -102,10 +101,10 @@ pub fn load_graph(repo: &Path) -> PlanWorkspace {
         .unwrap()
 }
 
-/// The live repository's graph bytes (asserted unchanged by every test).
+/// Development graph fixture bytes, asserted unchanged by tests that operate
+/// on isolated copies. Stable release trees intentionally carry no live graph.
 pub fn live_graph_bytes() -> Vec<u8> {
-    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/plan/execution-graph.toml");
-    std::fs::read(&p).unwrap()
+    include_bytes!("../fixtures/development-execution-graph.toml").to_vec()
 }
 
 /// Dispatches a CLI call against `repo` and returns the outcome + its JSON envelope.

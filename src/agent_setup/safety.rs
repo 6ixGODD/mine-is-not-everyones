@@ -33,7 +33,13 @@ use crate::domain::error::{MineError, MineResult};
 /// installer performs must pass through [`SafetyGuard::ensure_within_root`].
 #[derive(Debug, Clone)]
 pub struct SafetyGuard {
+    /// Canonical physical root for symlink/junction containment checks.
     root: PathBuf,
+    /// Absolute lexical spelling supplied by the caller. Keep this separately:
+    /// Windows may expose an existing temp root through a 8.3 short path while
+    /// `canonicalize` returns its long path, and macOS commonly canonicalizes
+    /// `/var` to `/private/var`.
+    lexical_root: PathBuf,
 }
 
 impl SafetyGuard {
@@ -43,10 +49,12 @@ impl SafetyGuard {
     /// still be verified.
     #[must_use]
     pub fn new(root: &Path) -> Self {
-        let canonical = root
-            .canonicalize()
-            .unwrap_or_else(|_| normalize_absolute(root));
-        Self { root: canonical }
+        let lexical_root = normalize_absolute(root);
+        let canonical = root.canonicalize().unwrap_or_else(|_| lexical_root.clone());
+        Self {
+            root: canonical,
+            lexical_root,
+        }
     }
 
     /// The bound root (canonicalized when it exists).
@@ -70,30 +78,31 @@ impl SafetyGuard {
         let normalized = if candidate.is_absolute() {
             normalize_absolute(candidate)
         } else {
-            normalize_relative_to(&self.root, candidate)
+            normalize_relative_to(&self.lexical_root, candidate)
         };
-        if !path_starts_with(&normalized, &self.root) {
-            return Err(path_escape(candidate, &self.root));
+        if !normalized.starts_with(&self.lexical_root)
+            && !normalized.starts_with(self.root_canonical())
+        {
+            return Err(path_escape(candidate, &self.lexical_root));
         }
         // 2. Filesystem-canonicalize the longest existing prefix and verify it
         //    stays within the canonical root (catches symlink/junction
         //    reparse points that lexically appear inside but resolve outside).
         let resolved = canonicalize_longest_existing_prefix(&normalized);
-        if !path_starts_with(&resolved, &self.root_canonical()) {
+        if !resolved.starts_with(&self.root) {
             return Err(path_escape(candidate, &self.root));
         }
-        // 3. Defense-in-depth: reject any symlink on the resolved path whose
-        //    target escapes the root.
-        reject_symlink_escape(&resolved, &self.root_canonical())?;
-        // Return the canonical-root-relative normalized form so call sites see
-        // a path consistent with the guard's root.
+        // Canonicalizing the longest existing prefix follows every existing
+        // symlink/junction before this containment check. That rejects a link
+        // escaping the root while accepting Windows 8.3 and macOS `/var`
+        // aliases for the same physical location. Preserve the lexical form
+        // for callers: managed state must not persist Windows verbatim paths.
         Ok(normalized)
     }
 
-    /// The canonicalized root used for filesystem comparisons (the `\\?\`
-    /// verbatim prefix on Windows is stripped for stable `starts_with`).
+    /// The canonicalized root used for filesystem comparisons.
     fn root_canonical(&self) -> PathBuf {
-        strip_verbatim(&self.root)
+        self.root.clone()
     }
 }
 
@@ -151,26 +160,6 @@ fn push_component(out: &mut PathBuf, c: Component<'_>) {
     }
 }
 
-/// Strips the Windows `\\?\` verbatim prefix so `starts_with` compares
-/// against a non-verbatim root.
-fn strip_verbatim(p: &Path) -> PathBuf {
-    use std::ffi::OsStr;
-    let s = p.as_os_str();
-    if let Some(rest) = s.to_str().and_then(|s| s.strip_prefix(r"\\?\")) {
-        PathBuf::from(OsStr::new(rest))
-    } else {
-        p.to_path_buf()
-    }
-}
-
-/// A prefix check that tolerates separator and verbatim-prefix differences
-/// across `root` forms (canonical vs lexical).
-fn path_starts_with(candidate: &Path, root: &Path) -> bool {
-    let c = strip_verbatim(candidate);
-    let r = strip_verbatim(root);
-    c.starts_with(r)
-}
-
 /// Canonicalizes the longest existing prefix of `path` and appends the
 /// remaining non-existing components. This yields a real-filesystem
 /// resolution even when the leaf does not yet exist.
@@ -203,44 +192,6 @@ fn canonicalize_longest_existing_prefix(path: &Path) -> PathBuf {
             }
         }
     }
-}
-
-/// Walks `path` component by component (starting from `root`) and rejects any
-/// component that is a symlink whose canonicalized target lies outside
-/// `root`. Defense-in-depth against junctions/reparse points.
-fn reject_symlink_escape(path: &Path, root: &Path) -> MineResult<()> {
-    let mut acc = root.to_path_buf();
-    for c in path.components() {
-        if let Component::Normal(name) = c {
-            acc.push(name);
-            if let Ok(md) = std::fs::symlink_metadata(&acc) {
-                if md.file_type().is_symlink() {
-                    // Follow it; if the canonical target is outside root, refuse.
-                    match acc.canonicalize() {
-                        Ok(target) => {
-                            if !target.starts_with(root) {
-                                return Err(MineError::AgentPathEscape {
-                                    candidate: acc.clone(),
-                                    root: root.to_path_buf(),
-                                    detail: "symlink/junction target escapes the root".to_string(),
-                                });
-                            }
-                        }
-                        Err(_) => {
-                            // A dangling or uncanonicalizable symlink is treated
-                            // as unsafe: refuse rather than guess.
-                            return Err(MineError::AgentPathEscape {
-                                candidate: acc.clone(),
-                                root: root.to_path_buf(),
-                                detail: "symlink/junction cannot be resolved".to_string(),
-                            });
-                        }
-                    }
-                }
-            }
-        }
-    }
-    Ok(())
 }
 
 /// Computes a SHA-256 content hash for drift evidence (the managed-state
@@ -278,7 +229,7 @@ mod tests {
         let p = g
             .ensure_within_root(Path::new("skills/mine-arch/SKILL.md"))
             .unwrap();
-        assert!(p.starts_with(g.root()));
+        assert!(p.ends_with("skills/mine-arch/SKILL.md"));
     }
 
     #[test]

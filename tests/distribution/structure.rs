@@ -167,8 +167,7 @@ fn plugin_directory_is_self_contained_no_outside_links() {
             let path = entry.path();
             #[cfg(unix)]
             {
-                use std::os::unix::fs::symlink_metadata;
-                let md = symlink_metadata(&path).unwrap();
+                let md = std::fs::symlink_metadata(&path).unwrap();
                 if md.file_type().is_symlink() {
                     let target = std::fs::read_link(&path).unwrap();
                     let resolved = path.parent().unwrap().join(&target);

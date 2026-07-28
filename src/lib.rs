@@ -1,9 +1,9 @@
 //! MINE core library.
 //!
-//! Plan 01 implements the deterministic initialization service, the
+//! Implements the deterministic initialization service, the
 //! design-namespace marker validation, and repository identity/version
-//! persistence. Plan 02 implements the execution-graph domain and safe
-//! persistence. Plan 03 implements the CLI, JSON/human output, deterministic
+//! persistence. The execution-graph domain and safe
+//! persistence. The CLI, JSON/human output, deterministic
 //! rendering, read-only Git evidence, design backup, workspace lifecycle,
 //! and the plan-lifecycle commands. The CLI adapter, MCP server, and
 //! distribution are wired progressively; later plans add MCP, Skills

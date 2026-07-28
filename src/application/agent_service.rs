@@ -1,14 +1,14 @@
 // Enforce `AGENTS.md`'s "Business code must not use `unsafe`" at compile time.
 #![forbid(unsafe_code)]
 
-//! Application service for agent install/uninstall/status/config — Plan 07-1.
+//! Application service for agent install/uninstall/status/config.
 //!
 //! Orchestration behind the CLI `mine agent` group. The critical Fix 3
 //! (isolation): there are two distinct entry points — [`install`] /
 //! [`uninstall`] / [`doctor`] / [`status`] all take an explicit [`Env`]
 //! built by the caller (isolated when `--config-root` supplied, real-env only
 //! when not). The service NEVER reads `std::env` itself; the caller chooses the
-//! env constructor. This structural separation is what the rejected Plan 07's
+//! env constructor. This structural separation prevents the isolation
 //! mixed `real_env()`/`agent_env()` violated.
 
 use std::path::PathBuf;

@@ -1,7 +1,7 @@
 // Enforce no `unsafe` in test code (mirrors the library crate's `forbid`).
 #![forbid(unsafe_code)]
 
-//! End-to-end MCP server integration tests for Plan 05-1.
+//! End-to-end MCP server integration tests.
 //!
 //! These tests drive the **real rmcp stdio transport**: each test spawns the
 //! built `mine mcp serve` binary as a child process, connects to it as an rmcp
@@ -18,7 +18,7 @@
 //! `tests::common::seeded_repo`. The live repository graph is snapshotted
 //! before and after the test binary and asserted byte-identical.
 
-// `tests/common/mod.rs` is a shared helper module (owned by Plan 09-1's test
+// `tests/common/mod.rs` is a shared helper module (reused across
 // suite); this binary uses only a subset of its helpers, so silence the
 // per-binary dead-code lint without modifying the shared file.
 #[allow(dead_code)]
@@ -270,7 +270,7 @@ async fn plan_add_creates_draft_plan() {
         json!({
             "id": "04",
             "path": "docs/plan/04.md",
-            "title": "Plan 04",
+            "title": "Test node",
             "design_references": ["docs/design/principles.md"],
             "exclusive_write_paths": ["tests/04/"],
             "hard_predecessors": ["01"]
@@ -313,7 +313,7 @@ async fn plan_lifecycle_start_implemented_accept() {
     let (tmp, repo) = fixture();
     let client = connect(repo).await;
 
-    // Start plan 02 (READY -> IN_PROGRESS).
+    // Start a READY node (READY -> IN_PROGRESS).
     let started = call_tool(&client, "mine_plan_start", json!({ "id": "02" })).await;
     assert_eq!(started.get("ok").and_then(|o| o.as_bool()), Some(true));
     assert_eq!(
@@ -381,7 +381,7 @@ async fn plan_reject_after_implemented() {
     let (tmp, repo) = fixture();
     let client = connect(repo).await;
 
-    // Reject requires IMPLEMENTED; take plan 03 through start -> implemented.
+    // take a node through start -> implemented.
     call_tool(&client, "mine_plan_start", json!({ "id": "03" })).await;
     call_tool(
         &client,

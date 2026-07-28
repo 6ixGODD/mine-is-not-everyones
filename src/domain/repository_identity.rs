@@ -1,6 +1,6 @@
 //! Repository identity and MINE code-repository version persistence.
 //!
-//! Plan 01 work package 2: define the project UUID and the MINE
+//! Define the project UUID and the MINE
 //! code-repository version persistence. Existing managed values are preserved;
 //! an unmanaged repository gets a fresh UUID and the default version `0.1.0`
 //! unless reliable root version evidence (for example `Cargo.toml`
@@ -59,7 +59,7 @@ impl RepositoryIdentity {
 /// Extracts reliable root version evidence from a Cargo manifest string.
 ///
 /// Returns the `[package].version` value when present and non-empty. This is
-/// the only root-version source MINE consults in Plan 01; additional sources
+/// the only root-version source MINE consults; additional sources
 /// may be added by later plans.
 #[must_use]
 pub fn root_version_from_cargo_manifest(cargo_toml: &str) -> Option<String> {

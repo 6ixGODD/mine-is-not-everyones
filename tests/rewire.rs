@@ -1,7 +1,7 @@
 // Enforce no `unsafe` in MINE-owned test crates.
 #![forbid(unsafe_code)]
 
-//! `mine plan rewire-compensation --id` integration tests (Plan 09-1).
+//! `mine plan rewire-compensation --id` integration tests.
 //!
 //! Drives the CLI over isolated temp repos seeded with controlled graphs; the
 //! live repository graph is snapshotted before/after and asserted unchanged.
@@ -368,7 +368,7 @@ fn rewire_missing_id_flag_is_usage() {
 /// `expected_revision` becomes stale once the winner commits inside the lock)
 /// gets `MINE_REVISION_CONFLICT` rather than silently overwriting or being
 /// masked as an idempotent no-op. This is the dedicated
-/// stale/revision-conflict test required by the Plan 09-1 review for the new
+/// stale/revision-conflict test required by the independent review for the new
 /// rewiring mutation command.
 #[test]
 fn concurrent_rewire_is_resolved_by_revision_conflict() {

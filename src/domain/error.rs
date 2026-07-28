@@ -1,11 +1,11 @@
 //! Typed error model with stable machine-readable codes.
 //!
-//! Plan 01 defines the error variants needed for repository discovery,
+//! Error variants for repository discovery,
 //! design-namespace validation, marker validation, configuration validation,
 //! and identity reconciliation. Later plans extend this enum with the
 //! execution-graph, plan-lifecycle, revision, lock, distribution, and
 //! agent-configuration variants. Each variant exposes a stable [`MineError::code`]
-//! string that becomes part of the public JSON error contract in Plan 03.
+//! string that becomes part of the public JSON error contract.
 
 use std::path::PathBuf;
 use thiserror::Error;
@@ -120,7 +120,7 @@ pub enum MineError {
     #[error("input/output error: {0}")]
     Io(#[from] std::io::Error),
 
-    // --- Plan 07-1: agent installer / managed state / doctor / transaction ---
+    // --- agent installer / managed state / doctor / transaction ---
     /// A write target for the agent installer resolves outside the injected
     /// configuration root (path traversal, symlink/junction escape).
     /// Exit: GATE (3). Stable code `MINE_AGENT_PATH_ESCAPE`.

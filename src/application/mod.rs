@@ -4,9 +4,9 @@
 //! call the **same** application services (no duplicate state-machine, path,
 //! backup, or branch policy).
 //!
-//! - Plan 01: [`init_service`] (setup-only initialization).
-//! - Plan 02/03: [`workspace_service`] (internal workspace lifecycle).
-//! - Plan 05: [`graph_service`] (read-only graph queries + shared mutation
+//! - [`init_service`] (setup-only initialization).
+//! - [`workspace_service`] (internal workspace lifecycle).
+//! - [`graph_service`] (read-only graph queries + shared mutation
 //!   transaction), [`plan_service`] (plan lifecycle transitions), and
 //!   [`design_service`] (read-only design validation/status). These are the
 //!   shared services the CLI `plan.*`/`graph.*`/`design.*` handlers and the

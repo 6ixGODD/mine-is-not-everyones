@@ -1,7 +1,7 @@
 // Enforce no `unsafe` in MINE-owned test crates.
 #![forbid(unsafe_code)]
 
-//! Work Package 3 E2E fixtures: the six named scenarios from Plan 08.
+//! E2E fixtures: the six named bootstrap/design-interaction scenarios.
 //!
 //! 1. New repository — `bootstrap_tests::mine_init_creates_only_approved_skeleton`
 //! 2. Large old repository without design — `large_old_repo_without_design`

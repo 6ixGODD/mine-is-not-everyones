@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 
 //! Agent diagnostics — truthful inspection of actual Agent installation state.
-//! Ported (validated) from the rejected Plan 07 and reworked for the isolated
+//! Agent doctor diagnostics, reworked for isolated `--config-root` operation and
 //! [`Env`] (it derives paths only from `env.config_root`, never real env vars).
 //! Adds an incomplete-transaction status (Fix 2): doctor reports a pending
 //! transaction so the user sees an actionable recovery state.

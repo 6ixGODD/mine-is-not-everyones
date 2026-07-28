@@ -1,7 +1,7 @@
 // Enforce no `unsafe` in MINE-owned test crates.
 #![forbid(unsafe_code)]
 
-//! Plan 08-1 end-to-end tests: release preflight, bootstrap, self-hosting,
+//! End-to-end tests: release preflight, bootstrap, self-hosting,
 //! four-Agent isolated installation, real MCP subprocess discovery, the six
 //! Work Package 3 E2E fixtures, and adversarial nested-backup detection.
 

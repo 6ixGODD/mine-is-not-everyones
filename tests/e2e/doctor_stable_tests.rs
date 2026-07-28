@@ -1,7 +1,7 @@
 // Enforce no `unsafe` in MINE-owned test crates.
 #![forbid(unsafe_code)]
 
-//! Plan 12 adversarial tests: stable-tree doctor compatibility.
+//! Adversarial tests: stable-tree doctor compatibility.
 //!
 //! These tests prove that `mine doctor --agents all` correctly handles:
 //! 1. a valid graph-less stable candidate (branch == configured stable,

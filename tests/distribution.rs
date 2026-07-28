@@ -1,7 +1,7 @@
 // Enforce no `unsafe` in MINE-owned test crates.
 #![forbid(unsafe_code)]
 
-//! Distribution and Skill-contract integration tests for Plan 06.
+//! Distribution and Skill-contract integration tests.
 //!
 //! These tests verify the final Skill contract (MCP-first / CLI-fallback
 //! against the twelve accepted MCP tools), the distribution structure for

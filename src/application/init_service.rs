@@ -15,12 +15,12 @@
 //!
 //! The service performs **no** source scan, architecture generation, plan
 //! creation, agent invocation, business-code change, branch mutation, commit,
-//! merge, or release. File writes use `std::fs` directly; Plan 02 introduces
+//! merge, or release. File writes use `std::fs` directly; workspace lifecycle is a
 //! the atomic-write and file-lock infrastructure for the execution-graph paths
 //! it will own, at which point this service is refactored to use them.
 //!
 //! Real stable-branch discovery via Git is wired with the Git infrastructure in
-//! Plan 03; Plan 01 records the MINE-managed default for this repository
+//! separate concern. The MINE-managed default for this repository is recorded
 //! (`master`) and preserves any stable branch already recorded in an existing
 //! configuration.
 

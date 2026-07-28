@@ -28,7 +28,7 @@ serde_json = "1"
 schemars = { version = "1", features = ["preserve_order"] }
 rmcp = { version = "2.2.0", features = ["transport-io"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-# Plan 07-1: comment/ordering-preserving TOML editing for the Codex agent
+# Comment/ordering-preserving TOML editing for the Codex agent
 # installer config merge (avoids the destructive full-parse/reserialize
 # round trip that drops comments and formatting).
 toml_edit = "0.22"

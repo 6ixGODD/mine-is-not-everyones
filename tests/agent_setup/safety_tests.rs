@@ -1,7 +1,7 @@
 // Enforce no `unsafe` in MINE-owned test crates.
 #![forbid(unsafe_code)]
 
-//! Plan 07 safety and isolation tests: path traversal, symlink/junction
+//! Safety and isolation tests: path traversal, symlink/junction
 //! escape, and the hard guarantee that no test modifies the real user HOME.
 
 use super::common::*;

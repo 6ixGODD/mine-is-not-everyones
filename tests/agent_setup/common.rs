@@ -1,7 +1,7 @@
 // Enforce no `unsafe` in MINE-owned test crates.
 #![forbid(unsafe_code)]
 
-//! Shared helpers for the Plan 07 agent-setup test suite.
+//! Shared helpers for the agent-setup test suite.
 //!
 //! Every test drives the **real `mine` binary** via the accepted CLI
 //! (`cli::dispatch`) against an isolated temporary configuration root. No test
@@ -78,7 +78,19 @@ pub fn dispatch_doctor(repo: &Path, config_root: &Path, agents: &str) -> serde_j
     } else {
         stderr
     };
-    serde_json::from_str(&body).expect("doctor envelope is valid JSON")
+    let mut envelope: serde_json::Value =
+        serde_json::from_str(&body).expect("doctor envelope is valid JSON");
+    // Agent diagnostics are valid independently of repository health. On a
+    // graph-less non-stable checkout, `doctor` correctly returns a gate error
+    // but preserves them in `error.details.agents`; normalize that documented
+    // partial-failure location for the agent-focused test suite.
+    if envelope["data"]["agents"].is_null() {
+        let agents = envelope["error"]["details"]["agents"].clone();
+        if !agents.is_null() {
+            envelope["data"]["agents"] = agents;
+        }
+    }
+    envelope
 }
 
 /// A node helper for the seed fixture (reused shape; the agent tests don't

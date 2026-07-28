@@ -1,6 +1,6 @@
 //! Integration tests for the setup-only initialization service.
 //!
-//! These cover Plan 01 work package 7: absent, valid, legacy, and foreign
+//! These cover absent, valid, legacy, and foreign
 //! design roots, ownership mismatch, malformed markers, idempotent
 //! initialization, AGENTS.md section handling, and root-version evidence.
 

@@ -1,6 +1,6 @@
 //! Embedded Skill payloads for release binaries.
 //!
-//! Plan 06 embeds the five authoritative Skill directories directly into the
+//! Embeds the five authoritative Skill directories directly into the
 //! `mine` binary via `include_str!`, so standalone installation does not
 //! require a Git checkout. The authoritative source is the repository-root
 //! `skills/` directory (the only hand-edited Skill source, per
@@ -73,6 +73,10 @@ pub const EMBEDDED_SKILL_FILES: &[EmbeddedSkillFile] = &[
     EmbeddedSkillFile {
         path: "skills/mine-plan-review/SKILL.md",
         content: include_str!("../../skills/mine-plan-review/SKILL.md"),
+    },
+    EmbeddedSkillFile {
+        path: "skills/mine-plan-review/references/scan-plan-refs.sh",
+        content: include_str!("../../skills/mine-plan-review/references/scan-plan-refs.sh"),
     },
     EmbeddedSkillFile {
         path: "skills/mine-sync/SKILL.md",

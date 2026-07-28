@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 
 //! Adversarial test: committed nested Design-backup blocks release preflight.
-//! Proves Fix 1 (Plan 08-1): the recursive `git ls-tree -r --name-only` gate
+//! Proves the recursive `git ls-tree -r --name-only` gate
 //! detects nested `docs/design-backup-*/...` paths at arbitrary depth.
 //!
 //! Tests the actual production `branch_has_design_backups` function directly

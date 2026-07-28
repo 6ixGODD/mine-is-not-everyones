@@ -1,6 +1,6 @@
 //! `mine` executable entry point.
 //!
-//! Plan 03 wires the CLI adapter (`mine::cli`) into the binary: argument
+//! Wires the CLI adapter (`mine::cli`) into the binary: argument
 //! parsing, command dispatch, deterministic JSON / human output, and the
 //! public exit-code contract. The binary performs **no** Git mutation and
 //! no automatic commit, merge, reset, clean, stash, rebase, push, or branch

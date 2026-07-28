@@ -286,11 +286,8 @@ mod tests {
     fn error_envelope_is_deterministic_and_has_code() {
         let err = ErrorEnvelope::new(
             "plan.start",
-            EnvelopeError::new(
-                "MINE_PREDECESSOR_NOT_ACCEPTED",
-                "plan 02 predecessor 01 not accepted",
-            )
-            .with_details(json!({"plan_id":"02","predecessor_id":"01"})),
+            EnvelopeError::new("MINE_PREDECESSOR_NOT_ACCEPTED", "predecessor not accepted")
+                .with_details(json!({"plan_id":"02","predecessor_id":"01"})),
         )
         .with_repository("/repo");
         let s = err.to_json();

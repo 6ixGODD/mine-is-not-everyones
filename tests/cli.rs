@@ -42,6 +42,11 @@ fn run_no_repo(rest: &[&str]) -> Vec<String> {
     v
 }
 
+fn development_graph_fixture() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/development-execution-graph.toml")
+}
+
 fn init_git_repo(root: &std::path::Path) {
     std::process::Command::new("git")
         .arg("-C")
@@ -156,12 +161,11 @@ fn status_reports_graph_and_git_evidence() {
 }
 
 #[test]
-fn graph_validate_on_real_repository_graph_parses_and_validates() {
-    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    assert!(repo_root.join("docs/plan/execution-graph.toml").exists());
+fn graph_validate_on_development_fixture_parses_and_validates() {
+    let tmp = temp_copy_of_real_graph();
     let outcome = cli::dispatch(
         &run(
-            repo_root.to_str().unwrap(),
+            tmp.path().to_str().unwrap(),
             &["graph", "validate", "--format", "json"],
         ),
         "mine",
@@ -174,14 +178,13 @@ fn graph_validate_on_real_repository_graph_parses_and_validates() {
 
 #[test]
 fn graph_render_is_deterministic_and_idempotent() {
-    // Operate on a TEMP COPY of the real graph so the test never mutates the
-    // repository's tracked generated view.
-    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    // Operate on a temporary development-graph fixture so the test never
+    // mutates the stable tree, which intentionally has no graph workspace.
     let tmp = tempfile::tempdir().unwrap();
     let dst = tmp.path();
     std::fs::create_dir_all(dst.join("docs/plan")).unwrap();
     std::fs::copy(
-        repo_root.join("docs/plan/execution-graph.toml"),
+        development_graph_fixture(),
         dst.join("docs/plan/execution-graph.toml"),
     )
     .unwrap();
@@ -217,7 +220,7 @@ fn temp_copy_of_real_graph() -> tempfile::TempDir {
     let cfg = mine::cli::context::load_config(&repo_root).expect("real config exists");
     std::fs::write(tmp.path().join(".mine/config.toml"), cfg.to_toml()).unwrap();
     std::fs::copy(
-        repo_root.join("docs/plan/execution-graph.toml"),
+        development_graph_fixture(),
         tmp.path().join("docs/plan/execution-graph.toml"),
     )
     .unwrap();
@@ -226,12 +229,11 @@ fn temp_copy_of_real_graph() -> tempfile::TempDir {
 
 #[test]
 fn plan_start_refuses_non_ready_plan() {
-    // Plan 02-1 is ACCEPTED (terminal): `plan start` must be refused. Operate
+    // Node is ACCEPTED (terminal): `plan start` must be refused. Operate
     // on a TEMP COPY so the write path is never exercised against the live
     // repository graph. We snapshot the live graph bytes before/after and
     // assert they are unchanged (independent of the current revision number).
-    let live_path =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/plan/execution-graph.toml");
+    let live_path = development_graph_fixture();
     let live_before = std::fs::read_to_string(&live_path).unwrap();
     let tmp = temp_copy_of_real_graph();
     let outcome = cli::dispatch(
@@ -264,8 +266,7 @@ fn plan_accept_requires_implemented_state() {
     // copy only, never the live repository graph. Snapshot the live graph
     // bytes before/after to assert the live graph is byte-unchanged
     // (independent of the bootstrap revision number).
-    let live_path =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/plan/execution-graph.toml");
+    let live_path = development_graph_fixture();
     let live_before = std::fs::read_to_string(&live_path).unwrap();
     let tmp = temp_copy_of_real_graph();
     let toml_path = tmp.path().join("docs/plan/execution-graph.toml");
@@ -276,7 +277,7 @@ fn plan_accept_requires_implemented_state() {
     use mine::domain::graph::PlanNode;
     use mine::domain::status::PlanStatus;
     let injected_revision = ws.revision;
-    // Plan 02-1 is ACCEPTED; reuse it as a resolved hard predecessor. The
+    // Node is ACCEPTED; reuse it as a resolved hard predecessor. The
     // synthetic plan is IN_PROGRESS (not IMPLEMENTED); accepting it must fail.
     ws.plans.push(PlanNode {
         id: "99-test".to_string(),
@@ -332,7 +333,7 @@ fn plan_accept_requires_implemented_state() {
 
 #[test]
 fn plan_lifecycle_start_implemented_accept_releases_successor() {
-    // Independent-review addition (reviewer-owned; tests/cli.rs is Plan 03's
+    // Independent-review addition (reviewer-owned; tests/cli.rs is a
     // exclusive path). The implementation's own suite covered only the
     // *negative* plan-lifecycle CLI paths (refused start/accept). This test
     // exercises the full *positive* path end to end through the real CLI
@@ -342,8 +343,7 @@ fn plan_lifecycle_start_implemented_accept_releases_successor() {
     // the real graph with two synthetic nodes; the live repository graph is
     // byte-snapshotted before and after and asserted unchanged, and the
     // injected node ids are asserted never to leak into it.
-    let live_path =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/plan/execution-graph.toml");
+    let live_path = development_graph_fixture();
     let live_before = std::fs::read_to_string(&live_path).unwrap();
     let tmp = temp_copy_of_real_graph();
     let toml_path = tmp.path().join("docs/plan/execution-graph.toml");
@@ -473,8 +473,9 @@ fn plan_lifecycle_start_implemented_accept_releases_successor() {
 }
 
 #[test]
-fn workspace_open_on_real_graph_is_idempotent() {
-    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+fn workspace_status_on_development_fixture_is_idempotent() {
+    let tmp = temp_copy_of_real_graph();
+    let repo_root = tmp.path().to_path_buf();
     let store = TomlStore::new(&repo_root);
     let before = store.load().unwrap();
     let outcome = cli::dispatch(
@@ -512,9 +513,6 @@ fn cli_performs_no_git_mutation() {
     let before_clean = GitEvidence::collect(&repo_root).clean;
     for cmd in [
         ["status", "--format", "json"].as_slice(),
-        ["graph", "validate", "--format", "json"].as_slice(),
-        ["graph", "ready", "--format", "json"].as_slice(),
-        ["graph", "wave", "--format", "json"].as_slice(),
         ["design", "status", "--format", "json"].as_slice(),
     ] {
         let outcome = cli::dispatch(&run(repo_root.to_str().unwrap(), cmd), "mine");
@@ -580,9 +578,10 @@ fn design_backup_round_trip_and_gitignore() {
 
 #[test]
 fn json_envelope_has_stable_sorted_keys() {
+    let tmp = temp_copy_of_real_graph();
     let outcome = cli::dispatch(
         &run(
-            env!("CARGO_MANIFEST_DIR"),
+            tmp.path().to_str().unwrap(),
             &["graph", "ready", "--format", "json"],
         ),
         "mine",

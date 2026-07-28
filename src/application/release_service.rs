@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 
 //! Release service: deterministic release-candidate creation, preflight
-//! validation, and safe temporary-artifact cleanup - Plan 08.
+//! validation, and safe temporary-artifact cleanup.
 //!
 //! The release path is deterministic and **fail closed**: it refuses to
 //! mutate stable state until every required preflight and release-candidate
@@ -306,7 +306,7 @@ pub fn branch_has_design_backups(repo_root: &Path, branch: &str) -> MineResult<b
     // `docs/design-backup-20260101T000000Z/some-file.md` are returned.
     // The non-recursive variant only returns top-level tree entries (`docs`),
     // which can never match the `docs/design-backup-` prefix -- the root cause
-    // of the rejected Plan 08's broken release-safety gate (Plan 08-1 Fix 1).
+    // detects nested docs/design-backup-* paths at arbitrary depth.
     let output = std::process::Command::new("git")
         .arg("-C")
         .arg(repo_root)

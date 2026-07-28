@@ -8,41 +8,17 @@
 //! same bytes. These tests assert that property against the real repository
 //! graph and against synthetic workspaces.
 
-use std::path::PathBuf;
-
 use mine::domain::graph::{PlanNode, PlanWorkspace};
 use mine::domain::status::PlanStatus;
-use mine::infrastructure::toml_store::{TomlStore, render_markdown};
+use mine::infrastructure::toml_store::render_markdown;
 use mine::render;
 
 #[test]
-fn render_is_deterministic_for_real_repository_graph() {
-    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let store = TomlStore::new(&repo_root);
-    let ws = store.load().expect("real graph loads");
+fn render_is_deterministic_for_development_fixture() {
+    let ws = development_fixture();
     let a = render::render(&ws).expect("render a");
     let b = render::render(&ws).expect("render b");
     assert_eq!(a, b, "rendering the same workspace is byte-deterministic");
-    // Revision parity: the on-disk view advertises the same revision as the
-    // TOML machine source. (Full byte-content parity is not asserted here:
-    // the bootstrap-generated view was hand-authored by the reviewer with
-    // extra prose and em-dash glyphs; the canonical `render_markdown` produces
-    // a simpler ASCII form. The documented contract is *revision* parity,
-    // which `mine graph validate` enforces; the first real `mine graph render`
-    // post-acceptance normalizes the view to the canonical form.)
-    let on_disk = std::fs::read_to_string(store.md_path()).expect("md view exists");
-    let md_rev = on_disk
-        .lines()
-        .find_map(|l| {
-            l.strip_prefix("- Revision: `")
-                .and_then(|r| r.strip_suffix('`'))
-        })
-        .and_then(|s| s.parse::<u64>().ok());
-    assert_eq!(
-        md_rev,
-        Some(ws.revision),
-        "on-disk view revision matches TOML"
-    );
 }
 
 #[test]
@@ -55,9 +31,7 @@ fn render_markdown_round_trips_through_render_module() {
 
 #[test]
 fn render_contains_required_sections_and_plans() {
-    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let store = TomlStore::new(&repo_root);
-    let ws = store.load().unwrap();
+    let ws = development_fixture();
     let md = render::render(&ws).unwrap();
     assert!(md.contains("# Execution Graph"));
     assert!(md.contains("GENERATED VIEW"));
@@ -87,6 +61,11 @@ fn render_is_stable_across_status_changes() {
     ws.plans[0].status = original_status;
     let reverted = render_markdown(&ws).unwrap();
     assert_eq!(baseline, reverted);
+}
+
+fn development_fixture() -> PlanWorkspace {
+    toml::from_str(include_str!("fixtures/development-execution-graph.toml"))
+        .expect("development graph fixture parses")
 }
 
 fn sample_workspace() -> PlanWorkspace {

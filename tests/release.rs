@@ -1,7 +1,7 @@
 // Enforce no `unsafe` in MINE-owned test crates.
 #![forbid(unsafe_code)]
 
-//! `mine plan release --id` integration tests (Plan 09-1).
+//! `mine plan release --id` integration tests.
 //!
 //! Drives the CLI over isolated temp repos seeded with controlled graphs; the
 //! live repository graph is snapshotted before/after and asserted unchanged.
@@ -238,8 +238,8 @@ fn release_rejects_rejected_plan_others_unchanged() {
 /// Both are valid only when the safety invariants also hold: exactly one
 /// winner, exactly one revision bump, final `READY`, no stale overwrite, no
 /// unrelated graph data change, and TOML/Markdown consistency. This is the
-/// dedicated concurrency test required by the Plan 09-1 review for the new
-/// mutation command; Plan 10 relaxed the over-constrained single-code loser
+/// dedicated concurrency test required by the independent review for the new
+/// mutation command; the over-constrained single-code loser
 /// assertion and strengthened the invariants.
 #[test]
 fn concurrent_release_is_resolved_by_revision_conflict() {
@@ -253,7 +253,7 @@ fn concurrent_release_is_resolved_by_revision_conflict() {
     let n = load_graph(&repo).revision; // pre-mutation revision both readers observe
     let unrelated_before = load_graph(&repo)
         .get("01")
-        .expect("seeded unrelated plan 01")
+        .expect("seeded unrelated node 01")
         .clone();
     let repo_str = repo.to_str().unwrap().to_string();
     let repo_a = repo_str.clone();
@@ -329,11 +329,11 @@ fn concurrent_release_is_resolved_by_revision_conflict() {
     );
     assert_eq!(ws.get("09-1").unwrap().status, PlanStatus::Ready);
 
-    // No unrelated graph data changed: the Accepted plan 01 survives identical.
+    // No unrelated graph data changed: the Accepted node survives identical.
     let unrelated_after = ws.get("01").expect("unrelated plan survives");
     assert_eq!(
         unrelated_after, &unrelated_before,
-        "the concurrent race must not alter the unrelated Accepted plan 01"
+        "the concurrent race must not alter the unrelated Accepted node"
     );
 
     // TOML and generated Markdown remain mutually consistent: the Markdown

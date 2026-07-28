@@ -1,7 +1,7 @@
 // Enforce no `unsafe` in MINE-owned test crates.
 #![forbid(unsafe_code)]
 
-//! Shared helpers for the Plan 06 distribution test suite.
+//! Shared helpers for the distribution test suite.
 //!
 //! Sync-algorithm tests build isolated temporary source/destination trees and
 //! never touch the real repository or user configuration.
@@ -32,7 +32,7 @@ pub const FIVE_SKILLS: &[&str] = &[
     "mine-sync",
 ];
 
-/// The twelve accepted MCP tool names exposed by `mine mcp serve` (Plan 05-1).
+/// The twelve accepted MCP tool names exposed by `mine mcp serve`.
 pub const ACCEPTED_MCP_TOOLS: &[&str] = &[
     "mine_workspace_status",
     "mine_graph_validate",

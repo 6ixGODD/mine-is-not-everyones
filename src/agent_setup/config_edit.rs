@@ -2,11 +2,11 @@
 #![forbid(unsafe_code)]
 
 //! Comment/ordering-preserving structured configuration editing for Agent MCP
-//! registration — Fix 1 (Plan 07-1).
+//! registration — comment/ordering-preserving TOML editing via `toml_edit`.
 //!
 //! For Codex (TOML), editing uses `toml_edit` (a format-preserving editor) so
 //! comments, whitespace, and unrelated formatting survive the merge — the
-//! rejected Plan 07's destructive `toml::Value` reserialize round trip is
+//! Destructive `toml::Value` reserialize round trips that destroy comments are
 //! discarded. For Claude Code and OpenCode (JSON), a structured object merge
 //! preserves unrelated keys (JSON has no comments).
 //!

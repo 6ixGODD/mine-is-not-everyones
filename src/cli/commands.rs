@@ -55,7 +55,7 @@ pub fn handle(
         "init" => init(parsed, rest),
         "status" => status(parsed, rest),
         "doctor" => doctor(parsed, sub, rest),
-        // Plan 07-1: `mine agent ...` is wired below.
+        // `mine agent ...` is wired below.
         "workspace" => match sub {
             "open" => workspace_open(parsed, rest),
             "status" => workspace_status(parsed, rest),
@@ -291,7 +291,7 @@ fn status(parsed: &crate::cli::ParsedArgs, _rest: &[String]) -> HandlerResult {
 
 fn doctor(parsed: &crate::cli::ParsedArgs, sub: &str, rest: &[String]) -> HandlerResult {
     let ctx = build_context(&parsed.global).map_err(ctx_err)?;
-    // Plan 07-1: `mine doctor --agents all` (or `--agents <slug>`) appends the
+    // `mine doctor --agents all` (or `--agents <slug>`) appends the
     // agent installation diagnostics. The leaf `doctor` command may receive the
     // `--agents` token as `sub` (the dispatcher consumes tokens[1] as sub), so
     // fold it into the flag set.
@@ -336,7 +336,7 @@ fn doctor(parsed: &crate::cli::ParsedArgs, sub: &str, rest: &[String]) -> Handle
             "missing docs/design/index.md".to_string()
         },
     ));
-    // Plan 12: distinguish three graph states rather than treating "absent"
+    // Distinguish three graph states rather than treating "absent"
     // as unconditionally unhealthy:
     //   1. development repository, graph required: missing/invalid graph is a
     //      real failure (unchanged default);
@@ -380,7 +380,7 @@ fn doctor(parsed: &crate::cli::ParsedArgs, sub: &str, rest: &[String]) -> Handle
         },
     ));
     let repo_ok = checks.iter().all(|(_, ok, _)| *ok);
-    // Plan 07-1: optional agent diagnostics (`--agents all` or `--agents <slug>`).
+    // Optional agent diagnostics (`--agents all` or `--agents <slug>`).
     let mut agent_section: Option<Value> = None;
     if agents_scope.is_some() {
         let scope: &str = match &agents_scope {
@@ -444,8 +444,8 @@ fn doctor(parsed: &crate::cli::ParsedArgs, sub: &str, rest: &[String]) -> Handle
         });
     }
     // The repo-doctor error exit fires only on REPOSITORY check failures.
-    // Plan 07-1 agent diagnostics are reported in the success envelope.
-    // Plan 12: even when repository checks fail, the already-computed Agent
+    // Agent diagnostics are reported in the success envelope.
+    // Even when repository checks fail, the already-computed Agent
     // diagnostics are preserved in the error `details` so callers (Skills,
     // MCP, CI) never lose the Agent section merely because the repository is
     // unhealthy. This is the partial-failure case: the command returns a
@@ -1283,7 +1283,7 @@ impl EnvelopeWarningExt for Envelope {
 // future use and not currently called.
 
 // ----------------------------------------------------------------------------
-// Plan 07-1: agent installer handlers (`mine agent ...`) — isolation-correct.
+// Agent installer handlers (`mine agent ...`) — isolation-correct.
 // ----------------------------------------------------------------------------
 
 /// Resolves the agent installation environment. Fix 3 (isolation): when an
@@ -1431,7 +1431,7 @@ fn agent_config(_parsed: &crate::cli::ParsedArgs, rest: &[String]) -> HandlerRes
 }
 
 // ----------------------------------------------------------------------------
-// Plan 08: release preflight and dist sync/verify
+// Release preflight and dist sync/verify
 // ----------------------------------------------------------------------------
 
 fn release_preflight(parsed: &crate::cli::ParsedArgs, rest: &[String]) -> HandlerResult {

@@ -20,13 +20,13 @@ use mine::domain::graph::{PlanNode, PlanWorkspace};
 use mine::domain::status::PlanStatus;
 use mine::infrastructure::toml_store::TomlStore;
 
-/// Path to the real repository execution graph, used to prove the domain model
-/// round-trips the existing fact source byte-for-byte.
-fn real_graph_path() -> PathBuf {
+/// Development graph fixture used to verify the domain model's byte-for-byte
+/// round trip without requiring the temporary workspace on stable branches.
+fn development_graph_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("docs")
-        .join("plan")
-        .join("execution-graph.toml")
+        .join("tests")
+        .join("fixtures")
+        .join("development-execution-graph.toml")
 }
 
 fn sample_workspace(rev: u64) -> PlanWorkspace {
@@ -68,12 +68,12 @@ fn sample_workspace(rev: u64) -> PlanWorkspace {
 /// The real repository graph must parse, validate, and round-trip through the
 /// domain model without drift. This proves the TOML model is byte-compatible
 /// with the bootstrap fact source (including `ACCEPTED`/`IN_PROGRESS`/`REJECTED`
-/// statuses, the compensating Plan 02-1 node, and the flat-string-array design
+/// statuses, the compensating node, and the flat-string-array design
 /// references).
 #[test]
-fn real_repository_graph_round_trips_byte_for_byte() {
-    let original = std::fs::read_to_string(real_graph_path())
-        .expect("real execution-graph.toml must exist in the repository");
+fn development_graph_fixture_round_trips_byte_for_byte() {
+    let original = std::fs::read_to_string(development_graph_path())
+        .expect("development graph fixture must exist in the repository");
     let ws: PlanWorkspace =
         toml::from_str(&original).expect("real graph must parse into PlanWorkspace");
     // Structural validation passes.
@@ -88,7 +88,7 @@ fn real_repository_graph_round_trips_byte_for_byte() {
         "real execution-graph.toml must round-trip byte-for-byte"
     );
 
-    // The bootstrap graph now carries the compensating Plan 02-1 node (Plan 02
+    // The bootstrap graph now carries the compensating node (added when
     // was REJECTED and compensated). Assert the compensation node round-trips.
     assert!(
         ws.plans.len() >= 9,
@@ -97,10 +97,10 @@ fn real_repository_graph_round_trips_byte_for_byte() {
     );
     assert!(
         ws.get("02-1").is_some(),
-        "Plan 02-1 compensation node must round-trip"
+        "Compensating node must round-trip"
     );
     assert!(ws.revision >= 2);
-    let p01 = ws.get("01").expect("plan 01 exists");
+    let p01 = ws.get("01").expect("node 01 exists");
     assert_eq!(p01.status, PlanStatus::Accepted);
 }
 

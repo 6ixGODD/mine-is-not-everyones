@@ -3,7 +3,7 @@
 
 //! Uninstallation — removes ONLY resources proven MINE-owned through valid
 //! managed state AND current on-disk verification. Ported (validated) from the
-//! rejected Plan 07 and reworked for the isolated [`Env`].
+//! reworked for isolated [`Env`] with exact ownership (never inferred from a filename).
 //!
 //! Safety: preserve unrelated user files/config; preserve drifted/uncertain
 //! content (report, do not delete); never recursively delete; reject path

@@ -8,7 +8,6 @@ on:
       - "plan/**"
   pull_request:
 
-# Release, bootstrap, and multi-platform artifact workflows are owned by Plan 08.
 # This workflow provides the foundational Rust quality gates only.
 
 jobs:

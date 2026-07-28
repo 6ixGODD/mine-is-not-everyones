@@ -61,7 +61,7 @@ fn planning_skills_are_mcp_first_with_cli_fallback() {
 
 #[test]
 fn skills_document_cli_only_operations_without_mcp() {
-    // Plan 06: skills must state which operations are CLI-only (no MCP tool).
+    // Skills must state which operations are CLI-only (no MCP tool).
     // mine-plan-create must document that `release` is CLI-only.
     let create = skill_body("mine-plan-create");
     assert!(
@@ -89,8 +89,8 @@ fn no_stale_mine_design_sync_reference() {
 
 #[test]
 fn no_stale_doctor_agents_all_reference() {
-    // `mine doctor --agents <scope>` is now a real, accepted flag (Plan 07-1,
-    // corrected for stable-tree compatibility by Plan 12). This test
+    // `mine doctor --agents <scope>` is a real, accepted flag (added for agent
+    // diagnostics, corrected for stable-tree compatibility). This test
     // previously banned it as imaginary; that assumption is stale. Instead,
     // verify no Skill invents a flag that truly does not exist, e.g. a
     // `--agents` value the CLI does not accept.
@@ -125,7 +125,7 @@ fn no_stale_architecture_and_detailed_design_as_source() {
 
 #[test]
 fn skills_do_not_reference_unimplemented_cli_groups() {
-    // `mine agent` (Plan 07-1) and `mine dist` (Plan 08-1/08-2) are now
+    // `mine agent` and `mine dist` are now
     // implemented and accepted; Skills may reference them. This test now
     // guards against genuinely unimplemented groups instead.
     for s in FIVE_SKILLS {

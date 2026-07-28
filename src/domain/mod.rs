@@ -1,9 +1,9 @@
 //! Pure domain rules and typed errors.
 //!
-//! Domain modules contain no filesystem, Git, CLI, or MCP concerns. Plan 01
+//! Domain modules contain no filesystem, Git, CLI, or MCP concerns. The core
 //! introduced the error model, the project configuration model, the
 //! design-namespace marker validation, the repository identity/version logic,
-//! and the side-effect ports. Plan 02 extends the domain with the
+//! and the side-effect ports. The domain is extended with the
 //! execution-graph aggregate, plan status and transition rules, path safety,
 //! design references, and graph validation/algorithms.
 

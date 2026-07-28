@@ -1,10 +1,10 @@
 // Enforce `AGENTS.md`'s "Business code must not use `unsafe`" at compile time.
 #![forbid(unsafe_code)]
 
-//! Agent installer, managed state, and doctor — Plan 07-1 (compensating for the
-//! rejected Plan 07).
+//! Agent installer, managed state, and doctor — transactional installation with
+//! backup/rollback/recovery and explicit `--config-root` isolation.
 //!
-//! Plan 07-1 fixes three independently reproduced defects of Plan 07:
+//! This module provides transactional safety guarantees:
 //!
 //! 1. **Mandatory configuration backup before mutation** ([`backup`], [`config_edit`]):
 //!    every structured Agent config file is backed up (exact bytes, verified,
@@ -18,9 +18,9 @@
 //!    isolated [`targets::Env`] never honors real process environment
 //!    overrides (`CLAUDE_CONFIG_DIR`/`CODEX_HOME`/`PI_HOME`/`OPENCODE_CONFIG_DIR`).
 //!
-//! Selectively **ported** from the rejected Plan 07 (independently validated):
+//! The safety guard and target resolution were validated against real Windows junctions:
 //! [`safety`] (the `SafetyGuard` filesystem boundary, independently verified
-//! sound against a genuine Windows junction by the Plan 07-1 independent
+//! symlink/junction containment is verified against the canonical physical root, not just the
 //! review; no in-module junction unit test exists in `safety.rs` itself - this
 //! is an honestly disclosed limitation, not a hidden claim), [`managed_state`] (ownership record), [`uninstall`]
 //! (ownership-proven removal), [`doctor`] (truthful diagnostics), and the

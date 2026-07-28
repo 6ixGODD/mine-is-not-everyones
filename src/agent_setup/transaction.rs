@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 
 //! Bounded installation transaction with a durable pending record — Fix 2
-//! (Plan 07-1).
+//! Transactional agent installation with durable pending-transaction record.
 //!
 //! "Write managed state last" is not transactionality. This module records the
 //! planned changes of an in-flight installation in a durable MINE-owned
