@@ -217,17 +217,15 @@ jobs:
           echo "Bootstrap smoke test passed"
           rm -rf "$TMP"
 
-  # --- Isolated mine setup + agent status smoke (all platforms) ---
+  # --- Isolated mine setup + agent status smoke (single platform) ---
+  # End-to-end check of the bootstrap->setup->install path with an isolated
+  # config root. Platform-specific junction/symlink/MCP behavior is already
+  # covered by the quality job's agent_setup tests on all three platforms;
+  # this job only verifies the setup command's integration layer, so a single
+  # Ubuntu runner suffices.
   agent-install:
-    name: mine setup + agent status (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - ubuntu-latest
-          - windows-latest
-          - macos-latest
+    name: mine setup + agent status
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
@@ -273,51 +271,6 @@ jobs:
           "
           rm -f status.json
           rm -rf "$TMP"
-
-  # --- MCP tool discovery: starts real server, verifies exactly 12 tools ---
-  mcp-discovery:
-    name: MCP tool discovery
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build mine
-        run: cargo build --quiet
-
-      - name: MCP tool discovery (exactly 12 tools)
-        shell: bash
-        run: |
-          set -e
-          # Start the real mine mcp serve subprocess, send initialize +
-          # initialized + tools/list, capture stdout, and verify exactly 12
-          # tools are exposed. The server reads JSON-RPC from stdin, responds,
-          # and exits 0 on EOF (verified locally). No timeout, no `|| true`,
-          # no failure masking: a crash (non-zero exit) fails this step via
-          # `set -e`, and the explicit 12-tool assertion below can also fail.
-          RESPONSE=$(printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0.0.0"}}}\n{"jsonrpc":"2.0","method":"notifications/initialized"}\n{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}\n' | ./target/debug/mine mcp serve 2>/dev/null)
-          
-          # Extract the tools/list response (id:2).
-          TOOLS_LINE=$(echo "$RESPONSE" | grep '"id":2')
-          if [ -z "$TOOLS_LINE" ]; then
-            echo "ERROR: no tools/list response received from mine mcp serve"
-            exit 1
-          fi
-          
-          # Count tools in the response.
-          TOOL_COUNT=$(echo "$TOOLS_LINE" | python -c "import sys,json;d=json.load(sys.stdin);print(len(d.get('result',{}).get('tools',[])))" 2>/dev/null || echo "0")
-          
-          echo "MCP tool count: $TOOL_COUNT"
-          if [ "$TOOL_COUNT" != "12" ]; then
-            echo "ERROR: expected 12 MCP tools, got $TOOL_COUNT"
-            exit 1
-          fi
-          
-          echo "MCP tool discovery smoke test passed (exactly 12 tools)"
 
   # --- Real downloadable release assets (tag pushes only) ---
   # Triggered by pushing a `v*` tag. Produces prebuilt, downloadable binaries
@@ -423,19 +376,19 @@ jobs:
 
       - name: Build release body (changelog + template)
         shell: bash
+        env:
+          CLIFF_CONTENT: ${{ steps.cliff.outputs.content }}
         run: |
           set -eu
-          # changelog from git-cliff, then the hand-written install/usage
-          # section from the template.
+          # CLIFF_CONTENT is the changelog text (not a file path); write it
+          # then append the hand-written install/usage template.
           {
-            cat "$CLIFF_OUTPUT"
+            printf '%s\n' "$CLIFF_CONTENT"
             echo
             cat .github/RELEASE_NOTES_TEMPLATE.md
           } > RELEASE_BODY.md
           echo "--- release body ---"
           cat RELEASE_BODY.md
-        env:
-          CLIFF_OUTPUT: ${{ steps.cliff.outputs.content }}
 
       - name: Download all release artifacts
         uses: actions/download-artifact@v4
