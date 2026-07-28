@@ -417,7 +417,7 @@ jobs:
         id: cliff
         with:
           config: cliff.toml
-          args: --latest --strip-header
+          args: --latest --strip header
         env:
           OUTPUT: CHANGES.md
 
@@ -458,7 +458,7 @@ jobs:
           ls -l
 
       - name: Create GitHub Release and upload assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           body_path: RELEASE_BODY.md
           fail_on_unmatched_files: true

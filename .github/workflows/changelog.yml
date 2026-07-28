@@ -30,7 +30,7 @@ jobs:
         uses: orhun/git-cliff-action@v4
         with:
           config: cliff.toml
-          args: --prepend CHANGELOG.md
+          args: -o CHANGELOG.md
         env:
           OUTPUT: CHANGELOG.md
 
