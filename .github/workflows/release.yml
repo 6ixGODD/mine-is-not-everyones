@@ -258,20 +258,20 @@ jobs:
           # Verify all four agents are installed with MCP registered. Use agent
           # status (not full doctor) because doctor also checks graph/git which
           # are not meaningful on a detached tag checkout.
-          ./target/debug/mine agent status --config-root "$TMP" --format json > /tmp/status.json
+          ./target/debug/mine agent status --config-root "$TMP" --format json > status.json
           python -c "
-          import json,sys
-          d=json.load(open('/tmp/status.json'))
+          import json
+          d=json.load(open('status.json'))
           installs={i['agent']: i for i in d['data']['installs']}
           expected={'claude-code','codex','pi','opencode'}
           assert set(installs)==expected, f'expected {expected}, got {set(installs)}'
           for a,i in installs.items():
               assert i['files']>0, f'{a}: no files'
-              # Pi has no MCP; the other three must have MCP registered.
               if a!='pi':
                   assert i['mcp_registered'], f'{a}: MCP not registered'
           print('mine setup smoke test passed: 4 agents installed, MCP registered for claude-code/codex/opencode')
           "
+          rm -f status.json
           rm -rf "$TMP"
 
   # --- MCP tool discovery: starts real server, verifies exactly 12 tools ---
