@@ -14,10 +14,14 @@
 //! When stdin is not a TTY (CI, `curl|sh` pipes), the selector is skipped and
 //! [`resolve_plan`] falls back to "install into every detected agent".
 
-use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
+use crossterm::execute;
 use crossterm::style::{Color, SetForegroundColor};
-use crossterm::terminal::{self, disable_raw_mode, enable_raw_mode};
-use crossterm::{cursor, queue, style::Print, terminal::ClearType};
+use crossterm::terminal::{
+    BeginSynchronizedUpdate, Clear, ClearType, EndSynchronizedUpdate, EnterAlternateScreen,
+    LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+};
+use crossterm::{cursor, queue, style::Print};
 use std::io::{Write, stdout};
 
 use crate::domain::error::{MineError, MineResult};
@@ -41,6 +45,7 @@ struct Entry {
 ///   TTY, so the safe default is "install into all detected").
 pub fn resolve_plan(
     detections: &[Detection],
+    version_note: &str,
     _yes: bool,
     env: &crate::agent_setup::targets::Env,
 ) -> MineResult<SetupPlan> {
@@ -62,23 +67,32 @@ pub fn resolve_plan(
         .collect();
 
     if is_tty() {
-        let final_entries = run_selector(entries)?;
-        let mut install = Vec::new();
-        let mut uninstall = Vec::new();
-        // Build install list from final checked+detected; uninstall list from
-        // previously-installed but now unchecked.
-        for d in detections {
-            let e = final_entries.iter().find(|e| e.slug == d.slug).unwrap();
-            if d.detected {
-                if e.checked {
-                    install.push(d.slug.clone());
-                } else if state.record(&d.slug).is_some() {
-                    // Was installed, now deselected -> uninstall.
-                    uninstall.push(d.slug.clone());
+        match run_selector(entries, detections, version_note)? {
+            Some(final_entries) => {
+                let mut install = Vec::new();
+                let mut uninstall = Vec::new();
+                for d in detections {
+                    let e = final_entries.iter().find(|e| e.slug == d.slug).unwrap();
+                    if d.detected {
+                        if e.checked {
+                            install.push(d.slug.clone());
+                        } else if state.record(&d.slug).is_some() {
+                            uninstall.push(d.slug.clone());
+                        }
+                    }
                 }
+                Ok(SetupPlan {
+                    install,
+                    uninstall,
+                    cancelled: false,
+                })
             }
+            None => Ok(SetupPlan {
+                install: Vec::new(),
+                uninstall: Vec::new(),
+                cancelled: true,
+            }),
         }
-        Ok(SetupPlan { install, uninstall })
     } else {
         // Non-TTY fallback: install into every detected agent.
         let install: Vec<String> = detections
@@ -92,6 +106,7 @@ pub fn resolve_plan(
         Ok(SetupPlan {
             install,
             uninstall: Vec::new(),
+            cancelled: false,
         })
     }
 }
@@ -103,9 +118,12 @@ fn is_tty() -> bool {
 }
 
 /// Runs the interactive selector. Returns the final entry states.
-fn run_selector(mut entries: Vec<Entry>) -> MineResult<Vec<Entry>> {
+fn run_selector(
+    mut entries: Vec<Entry>,
+    detections: &[Detection],
+    version_note: &str,
+) -> MineResult<Option<Vec<Entry>>> {
     let mut focus: usize = 0;
-    // Move focus to the first selectable (detected) entry.
     for (i, e) in entries.iter().enumerate() {
         if e.detected {
             focus = i;
@@ -113,27 +131,39 @@ fn run_selector(mut entries: Vec<Entry>) -> MineResult<Vec<Entry>> {
         }
     }
 
+    let mut out = stdout();
     enable_raw_mode().map_err(|e| MineError::ExternalDependency {
         detail: format!("TUI: enable_raw_mode failed: {e}"),
     })?;
-    let result = selector_loop(&mut entries, &mut focus);
-    // Always restore terminal state.
+    let _ = execute!(out, EnterAlternateScreen);
+    let outcome = selector_loop(&mut entries, &mut focus, &mut out, detections, version_note);
+    let _ = execute!(out, LeaveAlternateScreen);
     let _ = disable_raw_mode();
-    // Clear the selector lines on exit.
-    let mut out = stdout();
-    let _ = queue!(out, terminal::Clear(ClearType::FromCursorDown),);
     let _ = out.flush();
-    result?;
-    Ok(entries)
+    match outcome? {
+        SelectorOutcome::Confirmed => Ok(Some(entries)),
+        SelectorOutcome::Cancelled => Ok(None),
+    }
 }
 
-fn selector_loop(entries: &mut [Entry], focus: &mut usize) -> MineResult<()> {
-    let mut out = stdout();
-    // Record the row where the selector starts; every redraw returns here and
-    // clears downward, so frames replace each other instead of scrolling.
-    let start_row = cursor::position().ok().map(|p| p.1).unwrap_or(0);
+enum SelectorOutcome {
+    Confirmed,
+    Cancelled,
+}
+
+fn selector_loop(
+    entries: &mut [Entry],
+    focus: &mut usize,
+    out: &mut std::io::Stdout,
+    detections: &[Detection],
+    version_note: &str,
+) -> MineResult<SelectorOutcome> {
     loop {
-        render_frame(&mut out, entries, *focus, start_row)?;
+        // Wrap each frame in a synchronized update so the terminal applies
+        // the clear+redraw atomically instead of flickering.
+        let _ = queue!(out, BeginSynchronizedUpdate);
+        render_frame(out, entries, *focus, detections, version_note)?;
+        let _ = queue!(out, EndSynchronizedUpdate);
         out.flush().ok();
 
         if !event::poll(std::time::Duration::from_millis(500)).unwrap_or(false) {
@@ -151,6 +181,13 @@ fn selector_loop(entries: &mut [Entry], focus: &mut usize) -> MineResult<()> {
             if k.kind != KeyEventKind::Press {
                 continue;
             }
+            // Ctrl+C, Esc, and q all cancel cleanly (not an error).
+            let cancel = k.code == KeyCode::Esc
+                || k.code == KeyCode::Char('q')
+                || (k.code == KeyCode::Char('c') && k.modifiers.contains(KeyModifiers::CONTROL));
+            if cancel {
+                return Ok(SelectorOutcome::Cancelled);
+            }
             match k.code {
                 KeyCode::Up => move_focus(entries, focus, -1),
                 KeyCode::Down => move_focus(entries, focus, 1),
@@ -159,12 +196,7 @@ fn selector_loop(entries: &mut [Entry], focus: &mut usize) -> MineResult<()> {
                         entries[*focus].checked = !entries[*focus].checked;
                     }
                 }
-                KeyCode::Enter => return Ok(()),
-                KeyCode::Char('q') | KeyCode::Esc => {
-                    return Err(MineError::ExternalDependency {
-                        detail: "setup cancelled by user".to_string(),
-                    });
-                }
+                KeyCode::Enter => return Ok(SelectorOutcome::Confirmed),
                 _ => {}
             }
         }
@@ -187,15 +219,22 @@ fn render_frame(
     out: &mut std::io::Stdout,
     entries: &[Entry],
     focus: usize,
-    start_row: u16,
+    _detections: &[Detection],
+    version_note: &str,
 ) -> MineResult<()> {
-    // Return to the saved start row and wipe everything below, then redraw
-    // the whole frame in place. This is what prevents the infinite scroll.
+    let _ = queue!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
+    // Banner (ASCII art) at the top of the alternate screen.
+    let _ = queue!(out, Print(super::banner::ASCII_ART));
+    let _ = queue!(out, Print("  MINE Is Not Everyone's.\r\n\r\n"));
     let _ = queue!(
         out,
-        cursor::MoveTo(0, start_row),
-        terminal::Clear(ClearType::FromCursorDown)
+        SetForegroundColor(Color::DarkGrey),
+        Print(format!("{version_note}\r\n\r\n")),
+        SetForegroundColor(Color::Reset)
     );
+    // Selector. The detection state is shown inline per entry (undetected
+    // agents are greyed with "(not detected)"), so a separate detection
+    // summary would be redundant.
     let _ = queue!(out, Print("Select coding agents to install MINE into:\r\n"));
     for (i, e) in entries.iter().enumerate() {
         let checkbox = if e.checked { "[*]" } else { "[ ]" };

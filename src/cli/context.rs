@@ -33,6 +33,9 @@ pub struct GlobalOpts {
     /// `--no-color` is accepted for interface compatibility but is a no-op:
     /// the default output is already plain text.
     pub no_color: bool,
+    /// Isolated config root (`--config-root <path>`). When `None`, the real
+    /// environment is used. Primarily for CI/tests.
+    pub config_root: Option<PathBuf>,
 }
 
 impl GlobalOpts {

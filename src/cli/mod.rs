@@ -8,10 +8,11 @@
 //! read-only/subcommand-defined mutations; no automatic commit, merge, reset,
 //! clean, stash, rebase, push, or branch deletion.
 
+pub mod args;
 pub mod commands;
 pub mod context;
 
-use std::path::PathBuf;
+use clap::Parser;
 
 use crate::output::envelope::{Envelope, EnvelopeError, ErrorEnvelope};
 use crate::output::exit_code;
@@ -38,9 +39,6 @@ pub enum OutcomePayload {
         envelope: ErrorEnvelope,
         message: String,
     },
-    /// Informational output (help, version) printed to stdout with exit 0.
-    /// Distinct from Success (no envelope) and Error (no "error:" prefix).
-    Info { stdout_text: String },
 }
 
 /// A handler error: a typed code + message + exit code + optional details.
@@ -75,27 +73,6 @@ impl HandlerError {
             details: serde_json::Value::Null,
         }
     }
-
-    /// Signals a help request (`--help`/`-h`). Dispatch renders usage to
-    /// stdout with exit 0 (not an error).
-    pub fn help() -> Self {
-        Self {
-            code: "MINE_HELP",
-            message: String::new(),
-            exit_code: exit_code::SUCCESS,
-            details: serde_json::Value::Null,
-        }
-    }
-
-    /// Signals a version request (`--version`/`-V`).
-    pub fn version() -> Self {
-        Self {
-            code: "MINE_VERSION",
-            message: String::new(),
-            exit_code: exit_code::SUCCESS,
-            details: serde_json::Value::Null,
-        }
-    }
 }
 
 /// A parsed invocation: global options and the remaining command tokens.
@@ -107,115 +84,58 @@ pub struct ParsedArgs {
 
 /// Parses a raw argument vector (program name expected as `argv[0]`).
 ///
-/// Global flags (`--format`, `--quiet`, `--no-color`, `--repo`) may appear
-/// before or after the subcommand for ergonomics. Returns a usage error on
-/// unknown global flags or a missing subcommand.
-pub fn parse(argv: &[String]) -> Result<ParsedArgs, HandlerError> {
-    // Skip argv[0] (program name).
-    let rest = if argv.is_empty() { &[][..] } else { &argv[1..] };
-
-    let mut format = context::OutputFormat::Human;
-    let mut quiet = false;
-    let mut no_color = false;
-    let mut repo: Option<PathBuf> = None;
-    let mut tokens: Vec<String> = Vec::new();
-
-    let mut i = 0;
-    while i < rest.len() {
-        let a = &rest[i];
-        match a.as_str() {
-            "--format" => {
-                i += 1;
-                let v = rest
-                    .get(i)
-                    .ok_or_else(|| HandlerError::usage("--format requires a value"))?;
-                format = match v.as_str() {
-                    "json" => context::OutputFormat::Json,
-                    "human" => context::OutputFormat::Human,
-                    other => {
-                        return Err(HandlerError::usage(format!("unknown --format {other:?}")));
-                    }
-                };
-            }
-            s if s.starts_with("--format=") => {
-                let v = &s["--format=".len()..];
-                format = match v {
-                    "json" => context::OutputFormat::Json,
-                    "human" => context::OutputFormat::Human,
-                    other => {
-                        return Err(HandlerError::usage(format!("unknown --format {other:?}")));
-                    }
-                };
-            }
-            "--quiet" => quiet = true,
-            "--no-color" => no_color = true,
-            "--repo" => {
-                i += 1;
-                let v = rest
-                    .get(i)
-                    .ok_or_else(|| HandlerError::usage("--repo requires a value"))?;
-                repo = Some(PathBuf::from(v));
-            }
-            s if s.starts_with("--repo=") => {
-                repo = Some(PathBuf::from(&s["--repo=".len()..]));
-            }
-            "--help" | "-h" => return Err(HandlerError::help()),
-            "--version" | "-V" => return Err(HandlerError::version()),
-            other => tokens.push(other.to_string()),
-        }
-        i += 1;
-    }
-
-    let _ = no_color; // accepted for compatibility; default output is already plain
-
-    if tokens.is_empty() {
-        return Err(HandlerError::usage(
-            "no subcommand given (try `mine init`, `mine status`, `mine doctor`)",
-        ));
-    }
-    Ok(ParsedArgs {
-        global: GlobalOpts {
-            format,
-            quiet,
-            repo,
-            no_color,
-        },
-        tokens,
-    })
-}
-
 /// Runs the CLI against a raw argument vector and returns the final
 /// [`Outcome`] for the caller (`main`) to render and exit on.
 ///
 /// `program` is the binary name used in usage messages.
-pub fn dispatch(argv: &[String], program: &str) -> Outcome {
-    let parsed = match parse(argv) {
-        Ok(p) => p,
+pub fn dispatch(argv: &[String], _program: &str) -> Outcome {
+    // Clap owns --help/--version: it prints colored help and exits directly.
+    // For everything else we parse into our model, build the rest-token vector
+    // the existing handlers expect, and route through commands::handle so the
+    // JSON envelope contract and handler logic stay unchanged.
+    let cli = match args::Cli::try_parse_from(argv.iter().cloned()) {
+        Ok(c) => c,
         Err(e) => {
-            if e.code == "MINE_HELP" {
-                return usage_outcome(program);
+            if e.kind() == clap::error::ErrorKind::DisplayHelp
+                || e.kind() == clap::error::ErrorKind::DisplayVersion
+            {
+                let _ = e.print();
+                std::process::exit(e.exit_code());
             }
-            if e.code == "MINE_VERSION" {
-                return version_outcome();
-            }
-            return error_outcome("usage", e, None, None);
+            return error_outcome(
+                "usage",
+                HandlerError {
+                    code: "MINE_USAGE",
+                    message: e.to_string(),
+                    exit_code: exit_code::USAGE,
+                    details: serde_json::Value::Null,
+                },
+                None,
+                None,
+            );
         }
     };
 
-    let tokens = &parsed.tokens;
-    let group = tokens[0].as_str();
-    // A group may take a subcommand as tokens[1]. If tokens[1] is a flag
-    // (starts with `--`) or absent, the group has no subcommand (e.g.
-    // `mine setup --agents ...`, `mine release`, `mine status`), so `sub` is
-    // empty and the rest starts at index 1.
-    let sub_token = tokens.get(1).map(String::as_str).unwrap_or("");
-    let has_sub = !sub_token.is_empty() && !sub_token.starts_with("--");
-    let sub = if has_sub { sub_token } else { "" };
-    let command = command_name(group, sub);
+    let global = context::GlobalOpts {
+        format: cli.format.map(|f| f.into()).unwrap_or_default(),
+        quiet: cli.quiet,
+        repo: cli.repo.clone(),
+        no_color: cli.no_color,
+        config_root: cli.config_root.clone(),
+    };
+    let parsed = ParsedArgs {
+        global,
+        tokens: Vec::new(),
+    };
 
-    let rest_start = if has_sub { 2 } else { 1 };
-    let rest = &tokens[rest_start..];
-    match commands::handle(&parsed, group, sub, rest) {
+    let (group, sub, mut rest, command) = command_route(&cli.command);
+    // Inject global --config-root into rest tokens so handlers that read it
+    // via parse_flags(rest) still find it.
+    if let Some(ref cr) = cli.config_root {
+        rest.push("--config-root".to_string());
+        rest.push(cr.display().to_string());
+    }
+    match commands::handle(&parsed, group, sub, &rest) {
         Ok((envelope, human)) => Outcome {
             command,
             exit_code: exit_code::SUCCESS,
@@ -233,47 +153,32 @@ pub fn dispatch(argv: &[String], program: &str) -> Outcome {
     }
 }
 
-/// Maps a (group, sub) pair to the dotted command identifier emitted in the
-/// JSON envelope.
-fn command_name(group: &str, sub: &str) -> &'static str {
-    match (group, sub) {
-        ("init", _) => "init",
-        ("status", _) => "status",
-        ("doctor", _) => "doctor",
-        ("workspace", "open") => "workspace.open",
-        ("workspace", "status") => "workspace.status",
-        ("workspace", "close") => "workspace.close",
-        ("graph", "validate") => "graph.validate",
-        ("graph", "render") => "graph.render",
-        ("graph", "status") => "graph.status",
-        ("graph", "ready") => "graph.ready",
-        ("graph", "wave") => "graph.wave",
-        ("graph", "show") => "graph.show",
-        ("plan", "add") => "plan.add",
-        ("plan", "show") => "plan.show",
-        ("plan", "start") => "plan.start",
-        ("plan", "implemented") => "plan.implemented",
-        ("plan", "accept") => "plan.accept",
-        ("plan", "reject") => "plan.reject",
-        ("plan", "release") => "plan.release",
-        ("plan", "rewire-compensation") => "plan.rewire-compensation",
-        ("design", "backup") => "design.backup",
-        ("design", "validate") => "design.validate",
-        ("design", "status") => "design.status",
-        ("repository", "version") => "repository.version",
-        ("repository", _) => "repository.version",
-        ("setup", _) => "setup",
-        ("update", _) => "update",
-        ("uninstall", _) => "uninstall",
-        ("agent", "install") => "agent.install",
-        ("agent", "uninstall") => "agent.uninstall",
-        ("agent", "status") => "agent.status",
-        ("agent", "config") => "agent.config",
-        ("release", _) => "release",
-        _ => "usage",
+/// Maps a parsed [`Commands`] to (group, sub, rest-tokens, command-name).
+#[allow(clippy::too_many_lines)]
+fn command_route(cmd: &Commands) -> (&'static str, &'static str, Vec<String>, &'static str) {
+    match cmd {
+        Commands::Init => ("init", "", vec![], "init"),
+        Commands::Status => ("status", "", vec![], "status"),
+        Commands::Doctor { agents } => ("doctor", "", doctor_tokens(agents.as_deref()), "doctor"),
+        Commands::Setup { agents, yes } => {
+            ("setup", "", setup_tokens(agents.as_deref(), *yes), "setup")
+        }
+        Commands::Update { yes } => ("update", "", yes_tokens(*yes), "update"),
+        Commands::Uninstall { yes } => ("uninstall", "", yes_tokens(*yes), "uninstall"),
+        Commands::Workspace { action } => workspace_route(action),
+        Commands::Graph { action } => graph_route(action),
+        Commands::Plan { action } => plan_route(action),
+        Commands::Design { action } => design_route(action),
+        Commands::Agent { action } => agent_route(action),
+        Commands::Repository { action } => repository_route(action),
+        Commands::Dist { action } => dist_route(action),
+        Commands::Release => ("release", "", vec![], "release"),
+        Commands::Mcp { action } => mcp_route(action),
     }
 }
 
+/// Maps a (group, sub) pair to the dotted command identifier emitted in the
+/// JSON envelope.
 fn error_outcome(
     command: &'static str,
     err: HandlerError,
@@ -299,52 +204,6 @@ fn error_outcome(
             envelope: env,
             message: err.message,
         },
-    }
-}
-
-fn usage_outcome(program: &str) -> Outcome {
-    // Fixed-width command column so descriptions line up.
-    let msg = [
-        format!("Usage: {program} <command> [options]"),
-        "".to_string(),
-        "Commands:".to_string(),
-        "  init                Initialize a repository for MINE".to_string(),
-        "  status              Show repository and execution-graph status".to_string(),
-        "  doctor              Diagnose MINE configuration".to_string(),
-        "  setup               Install MINE into coding agents (interactive)".to_string(),
-        "  update              Update the mine binary to the latest release".to_string(),
-        "  uninstall           Remove MINE from all agents and this machine".to_string(),
-        "  workspace open|status|close".to_string(),
-        "  graph validate|render|status|ready|wave|show".to_string(),
-        "  plan add|show|start|implemented|accept|reject|release".to_string(),
-        "  design backup|validate|status".to_string(),
-        "  agent install|uninstall|status|config".to_string(),
-        "  repository version show|suggest|set".to_string(),
-        "  mcp serve".to_string(),
-        "".to_string(),
-        "Options:".to_string(),
-        "  --format json|human  Output format (default: human)".to_string(),
-        "  --quiet              Suppress non-error human output".to_string(),
-        "  --no-color           Plain text (default)".to_string(),
-        "  --repo <path>        Repository root override".to_string(),
-        "  --help, -h           Show this help".to_string(),
-        "  --version, -V        Show the mine version".to_string(),
-    ]
-    .join("\n")
-        + "\n";
-    Outcome {
-        command: "usage",
-        exit_code: exit_code::SUCCESS,
-        payload: OutcomePayload::Info { stdout_text: msg },
-    }
-}
-
-fn version_outcome() -> Outcome {
-    let msg = format!("mine {}\n", env!("CARGO_PKG_VERSION"));
-    Outcome {
-        command: "version",
-        exit_code: exit_code::SUCCESS,
-        payload: OutcomePayload::Info { stdout_text: msg },
     }
 }
 
@@ -375,7 +234,6 @@ pub fn render(outcome: &Outcome, json: bool, quiet: bool) -> (String, String) {
                 (String::new(), format!("error: {message}\n"))
             }
         }
-        OutcomePayload::Info { stdout_text } => (stdout_text.clone(), String::new()),
     }
 }
 
@@ -389,4 +247,201 @@ pub fn envelope_for(command: &'static str, repo_root: Option<&std::path::Path>) 
         env = env.with_repository(r.display().to_string());
     }
     env
+}
+
+// ---------------------------------------------------------------------------
+// Clap -> rest-token conversion helpers.
+//
+// Handlers still consume `rest: &[String]` via their internal `parse_flags`.
+// These helpers rebuild the `--flag value` token sequence from the parsed
+// clap structs so the handlers work unchanged.
+// ---------------------------------------------------------------------------
+
+use args::*;
+
+fn push_opt(out: &mut Vec<String>, flag: &str, val: Option<&str>) {
+    if let Some(v) = val {
+        out.push(format!("--{flag}"));
+        out.push(v.to_string());
+    }
+}
+
+fn push_bool(out: &mut Vec<String>, flag: &str, on: bool) {
+    if on {
+        out.push(format!("--{flag}"));
+    }
+}
+
+fn doctor_tokens(agents: Option<&str>) -> Vec<String> {
+    let mut v = Vec::new();
+    push_opt(&mut v, "agents", agents);
+    v
+}
+
+fn setup_tokens(agents: Option<&str>, yes: bool) -> Vec<String> {
+    let mut v = Vec::new();
+    push_opt(&mut v, "agents", agents);
+    push_bool(&mut v, "yes", yes);
+    v
+}
+
+fn yes_tokens(yes: bool) -> Vec<String> {
+    let mut v = Vec::new();
+    push_bool(&mut v, "yes", yes);
+    v
+}
+
+fn workspace_route(a: &WorkspaceCmd) -> (&'static str, &'static str, Vec<String>, &'static str) {
+    match a {
+        WorkspaceCmd::Open => ("workspace", "open", vec![], "workspace.open"),
+        WorkspaceCmd::Status => ("workspace", "status", vec![], "workspace.status"),
+        WorkspaceCmd::Close => ("workspace", "close", vec![], "workspace.close"),
+    }
+}
+
+fn graph_route(a: &GraphCmd) -> (&'static str, &'static str, Vec<String>, &'static str) {
+    match a {
+        GraphCmd::Validate => ("graph", "validate", vec![], "graph.validate"),
+        GraphCmd::Render => ("graph", "render", vec![], "graph.render"),
+        GraphCmd::Status => ("graph", "status", vec![], "graph.status"),
+        GraphCmd::Ready => ("graph", "ready", vec![], "graph.ready"),
+        GraphCmd::Wave => ("graph", "wave", vec![], "graph.wave"),
+        GraphCmd::Show { plan } => {
+            let mut v = Vec::new();
+            push_opt(&mut v, "plan", plan.as_deref());
+            ("graph", "show", v, "graph.show")
+        }
+    }
+}
+
+fn plan_route(a: &PlanCmd) -> (&'static str, &'static str, Vec<String>, &'static str) {
+    match a {
+        PlanCmd::Add(a) => {
+            let mut v = Vec::new();
+            push_opt(&mut v, "id", Some(&a.id));
+            push_opt(&mut v, "path", Some(&a.path));
+            push_opt(&mut v, "title", Some(&a.title));
+            for r in &a.design_refs {
+                v.push("--design-ref".to_string());
+                v.push(r.clone());
+            }
+            for w in &a.write {
+                v.push("--write".to_string());
+                v.push(w.clone());
+            }
+            for h in &a.hard {
+                v.push("--hard".to_string());
+                v.push(h.clone());
+            }
+            ("plan", "add", v, "plan.add")
+        }
+        PlanCmd::Show(a) => {
+            let mut v = Vec::new();
+            push_opt(&mut v, "id", Some(&a.id));
+            ("plan", "show", v, "plan.show")
+        }
+        PlanCmd::Start(a) => {
+            let mut v = Vec::new();
+            push_opt(&mut v, "id", Some(&a.id));
+            push_opt(&mut v, "owner", a.owner.as_deref());
+            push_opt(&mut v, "run-id", a.run_id.as_deref());
+            ("plan", "start", v, "plan.start")
+        }
+        PlanCmd::Implemented(a) => {
+            let mut v = Vec::new();
+            push_opt(&mut v, "id", Some(&a.id));
+            push_opt(&mut v, "report", Some(&a.report));
+            for c in &a.commit {
+                v.push("--commit".to_string());
+                v.push(c.clone());
+            }
+            ("plan", "implemented", v, "plan.implemented")
+        }
+        PlanCmd::Accept(a) => {
+            let mut v = Vec::new();
+            push_opt(&mut v, "id", Some(&a.id));
+            push_opt(&mut v, "review", a.review.as_deref());
+            ("plan", "accept", v, "plan.accept")
+        }
+        PlanCmd::Reject(a) => {
+            let mut v = Vec::new();
+            push_opt(&mut v, "id", Some(&a.id));
+            push_opt(&mut v, "compensating-plan", a.compensating_plan.as_deref());
+            push_opt(&mut v, "reason", a.reason.as_deref());
+            ("plan", "reject", v, "plan.reject")
+        }
+        PlanCmd::Release(a) => {
+            let mut v = Vec::new();
+            push_opt(&mut v, "id", Some(&a.id));
+            ("plan", "release", v, "plan.release")
+        }
+        PlanCmd::RewireCompensation(a) => {
+            let mut v = Vec::new();
+            push_opt(&mut v, "id", Some(&a.id));
+            ("plan", "rewire-compensation", v, "plan.rewire-compensation")
+        }
+    }
+}
+
+fn design_route(a: &DesignCmd) -> (&'static str, &'static str, Vec<String>, &'static str) {
+    match a {
+        DesignCmd::Backup => ("design", "backup", vec![], "design.backup"),
+        DesignCmd::Validate => ("design", "validate", vec![], "design.validate"),
+        DesignCmd::Status => ("design", "status", vec![], "design.status"),
+    }
+}
+
+fn agent_route(a: &AgentCmd) -> (&'static str, &'static str, Vec<String>, &'static str) {
+    match a {
+        AgentCmd::Install { slug, dry_run } => {
+            let mut v = vec![slug.clone()];
+            push_bool(&mut v, "dry-run", *dry_run);
+            ("agent", "install", v, "agent.install")
+        }
+        AgentCmd::Uninstall { slug, dry_run } => {
+            let mut v = vec![slug.clone()];
+            push_bool(&mut v, "dry-run", *dry_run);
+            ("agent", "uninstall", v, "agent.uninstall")
+        }
+        AgentCmd::Status => ("agent", "status", vec![], "agent.status"),
+        AgentCmd::Config { slug } => ("agent", "config", vec![slug.clone()], "agent.config"),
+    }
+}
+
+fn repository_route(a: &RepositoryCmd) -> (&'static str, &'static str, Vec<String>, &'static str) {
+    match a {
+        RepositoryCmd::Version { action } => match action {
+            VersionCmd::Show => (
+                "repository",
+                "version",
+                vec!["show".to_string()],
+                "repository.version",
+            ),
+            VersionCmd::Suggest => (
+                "repository",
+                "version",
+                vec!["suggest".to_string()],
+                "repository.version",
+            ),
+            VersionCmd::Set { version } => (
+                "repository",
+                "version",
+                vec!["set".to_string(), version.clone()],
+                "repository.version",
+            ),
+        },
+    }
+}
+
+fn dist_route(a: &DistCmd) -> (&'static str, &'static str, Vec<String>, &'static str) {
+    match a {
+        DistCmd::Sync => ("dist", "sync", vec![], "dist.sync"),
+        DistCmd::Verify => ("dist", "verify", vec![], "dist.verify"),
+    }
+}
+
+fn mcp_route(a: &McpCmd) -> (&'static str, &'static str, Vec<String>, &'static str) {
+    match a {
+        McpCmd::Serve => ("mcp", "serve", vec![], "mcp.serve"),
+    }
 }

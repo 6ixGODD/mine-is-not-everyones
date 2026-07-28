@@ -95,6 +95,7 @@ impl MineServer {
             quiet: true,
             no_color: true,
             repo: Some(self.repo_root.clone()),
+            config_root: None,
         };
         build_context(&global)
     }

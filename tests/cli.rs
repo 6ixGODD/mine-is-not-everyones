@@ -141,14 +141,15 @@ fn init_backs_up_legacy_unmarked_design_root() {
     .unwrap();
 
     let outcome = cli::dispatch(&run(repo, &["init", "--format", "json"]), "mine");
-    assert_eq!(outcome.exit_code, 0, "init backs up and continues -> exit 0");
+    assert_eq!(
+        outcome.exit_code, 0,
+        "init backs up and continues -> exit 0"
+    );
     let env = envelope_json(&outcome);
     assert_eq!(env["ok"], true);
     // A backed-up-design action was recorded.
     let actions = env["data"]["actions"].as_array().unwrap();
-    let backed_up = actions
-        .iter()
-        .any(|a| a["kind"] == "backed-up-design");
+    let backed_up = actions.iter().any(|a| a["kind"] == "backed-up-design");
     assert!(backed_up, "init recorded a backed-up-design action");
     // The legacy content was moved into a backup directory.
     let docs_dir = root.path().join("docs");
@@ -162,11 +163,16 @@ fn init_backs_up_legacy_unmarked_design_root() {
         })
         .collect();
     assert_eq!(backups.len(), 1, "exactly one design backup created");
-    let legacy_preserved =
-        std::fs::read_to_string(backups[0].path().join("legacy.md")).unwrap();
+    let legacy_preserved = std::fs::read_to_string(backups[0].path().join("legacy.md")).unwrap();
     assert_eq!(legacy_preserved, "legacy");
     // A fresh MINE-managed design root was created.
-    assert!(root.path().join("docs").join("design").join(".mine-design.toml").exists());
+    assert!(
+        root.path()
+            .join("docs")
+            .join("design")
+            .join(".mine-design.toml")
+            .exists()
+    );
 }
 
 #[test]

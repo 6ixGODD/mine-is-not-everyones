@@ -146,7 +146,11 @@ fn mine_init_backs_up_legacy_unmarked_design() {
     let backups: Vec<_> = std::fs::read_dir(tmp.path().join("docs"))
         .unwrap()
         .filter_map(|e| e.ok())
-        .filter(|e| e.file_name().to_string_lossy().starts_with("design-backup-"))
+        .filter(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .starts_with("design-backup-")
+        })
         .collect();
     assert_eq!(backups.len(), 1, "one design backup created");
     assert_eq!(

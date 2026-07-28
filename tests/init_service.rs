@@ -193,7 +193,11 @@ fn legacy_unmarked_design_dir_is_backed_up_and_replaced() {
     let backups: Vec<_> = fs::read_dir(root.join("docs"))
         .unwrap()
         .filter_map(|e| e.ok())
-        .filter(|e| e.file_name().to_string_lossy().starts_with("design-backup-"))
+        .filter(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .starts_with("design-backup-")
+        })
         .collect();
     assert_eq!(backups.len(), 1);
     assert_eq!(
@@ -221,11 +225,14 @@ fn foreign_marker_is_backed_up_and_replaced() {
     let backups: Vec<_> = fs::read_dir(root.join("docs"))
         .unwrap()
         .filter_map(|e| e.ok())
-        .filter(|e| e.file_name().to_string_lossy().starts_with("design-backup-"))
+        .filter(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .starts_with("design-backup-")
+        })
         .collect();
     assert_eq!(backups.len(), 1);
-    let backed_up_marker =
-        fs::read_to_string(backups[0].path().join(".mine-design.toml")).unwrap();
+    let backed_up_marker = fs::read_to_string(backups[0].path().join(".mine-design.toml")).unwrap();
     assert!(backed_up_marker.contains("OtherTool"));
 }
 

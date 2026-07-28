@@ -36,6 +36,7 @@ pub mod self_update;
 
 use crate::application::agent_service;
 use crate::domain::error::{MineError, MineResult};
+use std::io::IsTerminal;
 use std::path::PathBuf;
 
 /// Which agents to act on, resolved from CLI flags or the TUI.
@@ -45,6 +46,8 @@ pub struct SetupPlan {
     pub install: Vec<String>,
     /// Agents to uninstall MINE from (were installed, user deselected).
     pub uninstall: Vec<String>,
+    /// True when the user cancelled the interactive selector (Esc/Ctrl+C/q).
+    pub cancelled: bool,
 }
 
 /// Runs `mine setup`.
@@ -58,32 +61,33 @@ pub struct SetupPlan {
 ///    detected).
 /// 5. Execute: install for `install`, uninstall for `uninstall`.
 pub fn run_setup(args: &SetupArgs) -> MineResult<SetupReport> {
-    banner::print();
     let current = env!("CARGO_PKG_VERSION");
 
     // Version check against latest release (best-effort).
     let latest = release_meta::latest_tag();
     let version_note = match &latest {
         Ok(tag) if release_meta::is_newer(tag, current) => {
-            let msg = format!("mine {} is available (you are running {})", tag, current);
-            if args.yes {
-                println!("{msg}");
-                println!("Run `mine update` to upgrade.");
-            } else {
-                println!("{msg}");
-            }
-            msg
+            format!("mine {} is available (you are running {})", tag, current)
         }
         Ok(tag) => format!("mine {} is up to date (latest release: {})", current, tag),
         Err(e) => format!("could not check for updates: {e}"),
     };
-    println!("{version_note}");
-    println!();
 
     // Detect installed agents.
     let detections = agent_detect::detect_all();
-    agent_detect::print_summary(&detections);
-    println!();
+
+    // In an interactive (TTY) session, the selector renders the banner,
+    // version note, and detection summary inside the alternate screen and
+    // restores the original screen on exit. In a non-TTY session (CI,
+    // curl|sh pipes), print them inline.
+    let interactive = std::io::stdin().is_terminal();
+    if !interactive {
+        banner::print();
+        println!("{version_note}");
+        println!();
+        agent_detect::print_summary(&detections);
+        println!();
+    }
 
     // Build the environment once: isolated when --config-root is given
     // (CI/tests), otherwise the real-env (reads live process env + home).
@@ -108,9 +112,10 @@ pub fn run_setup(args: &SetupArgs) -> MineResult<SetupReport> {
         SetupPlan {
             install,
             uninstall: Vec::new(),
+            cancelled: false,
         }
     } else {
-        selector::resolve_plan(&detections, args.yes, &env)?
+        selector::resolve_plan(&detections, &version_note, args.yes, &env)?
     };
 
     // Execute.
@@ -157,6 +162,7 @@ pub fn run_setup(args: &SetupArgs) -> MineResult<SetupReport> {
         installed,
         uninstalled,
         errors,
+        cancelled: plan.cancelled,
     })
 }
 
@@ -275,6 +281,7 @@ pub struct SetupReport {
     pub installed: Vec<String>,
     pub uninstalled: Vec<String>,
     pub errors: Vec<String>,
+    pub cancelled: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]

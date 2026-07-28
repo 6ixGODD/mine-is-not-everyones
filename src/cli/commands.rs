@@ -1576,7 +1576,11 @@ fn setup(_parsed: &crate::cli::ParsedArgs, rest: &[String]) -> HandlerResult {
     let report = crate::setup::run_setup(&args).map_err(|e| HandlerError::from_mine(&e))?;
     let env_data =
         envelope_for("setup", None).with_data(serde_json::to_value(&report).unwrap_or(Value::Null));
-    let mut lines = vec![HumanLine::Section("mine setup done".to_string())];
+    let mut lines = vec![HumanLine::Section(if report.cancelled {
+        "mine setup cancelled".to_string()
+    } else {
+        "mine setup done".to_string()
+    })];
     if !report.installed.is_empty() {
         lines.push(HumanLine::Field {
             key: "  installed".to_string(),
