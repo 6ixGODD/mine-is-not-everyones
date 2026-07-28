@@ -126,6 +126,32 @@ At minimum:
 - Inspect whether downstream code can consume the produced interface without decoding guessed semantics or adding a compatibility shim.
 - Confirm reports state exact commands/results and do not mark skips, timeouts, missing tools or warnings as passes.
 
+### Remove temporary-plan references before release closure
+
+Before the final stable-candidate integration, run the scanner bundled with this Skill from the root of the repository under review:
+
+```text
+bash references/scan-plan-refs.sh --check
+```
+
+The scanner lives next to this `SKILL.md` under `references/scan-plan-refs.sh` and is copied into every installer-managed Skill directory (Claude Code, Codex, Pi, OpenCode). It must never be invoked as `scripts/scan-plan-refs.sh` — that path does not exist in the repository being reviewed and would be a dangling reference. Run it with an absolute path if the agent cannot resolve the relative one, for example `bash ~/.claude/skills/mine-plan-review/references/scan-plan-refs.sh --check`.
+
+This scans tracked implementation, test, workflow, Skill, and distribution assets while excluding temporary `docs/plan/` and design documentation. It rejects stale `Plan NN` references because stable behavior must be intelligible without the ephemeral planning history. Rewrite a historical comment as an enduring contract; for example:
+
+```rust
+// Bad: A stale plan-number comment attributing behavior to a historical plan.
+// Good: Checksums prove artifact integrity only; binary reproducibility is not claimed.
+```
+
+An intentional fixture literal may be exempted only by an immediately preceding line with a concise reason:
+
+```rust
+// mine-release-allow-plan-reference: protocol fixture
+let input = "Plan 08-2";
+```
+
+Never use exemptions for implementation comments, workflow behavior, public diagnostics, or prose that can be expressed as a durable contract. Review every exemption, record its path/line/reason in the closure report, and rerun the scan after every correction. The scanner is a release-closure gate, not a substitute for semantic review.
+
 Do not accept because “tests pass.” Determine whether the tests assert the intended semantics rather than restating the implementation.
 Write a small independent probe when a key acceptance claim lacks discriminating evidence.
 
@@ -178,9 +204,10 @@ When the accepted plan graph reaches (or, after this acceptance, will reach) an 
 1. Merge the just-accepted branch into `dev` with `--no-ff` and re-run the complete decisive validation suite (`cargo fmt`, `cargo clippy -D warnings -W unsafe-code`, `cargo build --all-targets --all-features`, `cargo test --all-targets --all-features` at least twice with a fresh `CARGO_TARGET_DIR`, `python scripts/sync-plugin-assets.py --check`, `python scripts/verify.py`, `mine design validate --format json`, `mine graph validate --format json`) directly on `dev`.
 2. Call `mine release --format json` (CLI-only; no MCP tool exposes release preflight) as a diagnostic before candidate construction. Its development-tree gates are decisive immediately: terminal plan state, accepted compensation for every rejected plan, valid graph/render, valid design, synchronized distribution assets, no dirty tree, no pending Agent transaction, and the authoritative resolved version from `.mine/config.toml`. Before stable integration, `can_release:false` is expected solely when the existing stable branch still contains its old `docs/plan/` workspace; do not misreport that pre-integration stable-tree fact as a failed `dev` validation. After curated stable integration, run the preflight again from `dev` and require every gate, including no `docs/plan/` or `docs/design-backup-*` on the stable branch, to pass. `mine release` is validation-only; it must never itself claim that `master`, tags, publication, or cleanup occurred.
 3. If `mine release` (or any other decisive check) fails on a narrow, release-scoped defect — not a new design decision — fix it directly in this same session exactly as in "Fix directly during review" above (own commit, own regression coverage, full revalidation), rather than opening a compensating plan solely to perform the closure.
-4. In an isolated clone or Git worktree (never the reviewer's own live checkout), construct the exact stable candidate tree per `docs/design/governance/branch-and-plan-lifecycle.md` and `docs/design/integrations/distribution.md`: the accepted `dev` tree with the ephemeral `docs/plan/` workspace removed and no tracked `docs/design-backup-*` path. Build, test, run `mine design validate` and distribution verification against the candidate; do **not** run `mine graph validate` there because the graph-less stable tree intentionally has no `docs/plan/` workspace. Graph/render validation is instead a decisive gate on `dev` before candidate construction. Install all four Agents (`claude-code`, `codex`, `pi`, `opencode`) into an explicit isolated `--config-root`, confirm `mine doctor --agents all` reports every Agent healthy on this graph-less stable candidate (a positively-identified stable branch legitimately has no `docs/plan/`; this must not be confused with an unhealthy development repository), and confirm `mine mcp serve` exposes exactly the twelve accepted MCP tools.
-5. Only after every candidate check passes, perform the Design-authorized local stable-branch integration (squash or curated commit so temporary plan history is not imported into the stable branch — never a plain merge of `dev`), determine and record the resolved release version from `.mine/config.toml`, and perform only the MINE-owned local cleanup the Design authorizes: delete local `plan/*` branches that are merged/accepted (never a branch with unexpected ancestry, an unmerged branch, or a checked-out worktree), and delete the local `dev` branch only after stable integration succeeds.
-6. Never push, create a remote release, publish a package, force-update history, or delete a remote or unrelated/user branch. Report the exact final local stable-branch commit, the resolved version, the final stable-tree contents, and every local branch or artifact removed.
+4. Run the bundled `references/scan-plan-refs.sh --check` from the root of the repository under review (never `scripts/scan-plan-refs.sh` — that path does not exist in the target repository), correct every unexempted temporary-plan reference, and record every line-local fixture exemption before candidate construction.
+5. In an isolated clone or Git worktree (never the reviewer's own live checkout), construct the exact stable candidate tree per `docs/design/governance/branch-and-plan-lifecycle.md` and `docs/design/integrations/distribution.md`: the accepted `dev` tree with the ephemeral `docs/plan/` workspace removed and no tracked `docs/design-backup-*` path. Build, test, run `mine design validate` and distribution verification against the candidate; do **not** run `mine graph validate` there because the graph-less stable tree intentionally has no `docs/plan/` workspace. Graph/render validation is instead a decisive gate on `dev` before candidate construction. Install all four Agents (`claude-code`, `codex`, `pi`, `opencode`) into an explicit isolated `--config-root`, confirm `mine doctor --agents all` reports every Agent healthy on this graph-less stable candidate (a positively-identified stable branch legitimately has no `docs/plan/`; this must not be confused with an unhealthy development repository), and confirm `mine mcp serve` exposes exactly the twelve accepted MCP tools.
+6. Only after every candidate check passes, perform the Design-authorized local stable-branch integration (squash or curated commit so temporary plan history is not imported into the stable branch — never a plain merge of `dev`), determine and record the resolved release version from `.mine/config.toml`, and perform only the MINE-owned local cleanup the Design authorizes: delete local `plan/*` branches that are merged/accepted (never a branch with unexpected ancestry, an unmerged branch, or a checked-out worktree), and delete the local `dev` branch only after stable integration succeeds.
+7. Never push, create a remote release, publish a package, force-update history, or delete a remote or unrelated/user branch. Report the exact final local stable-branch commit, the resolved version, the final stable-tree contents, and every local branch or artifact removed.
 
 ## Reject and compensate
 
