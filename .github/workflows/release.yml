@@ -387,13 +387,7 @@ jobs:
             tar czf "mine-$TARGET.$EXT" -C "$STAGE" .
           fi
           FILE="mine-$TARGET.$EXT"
-          python -c "
-import hashlib
-fn = '$FILE'
-h = hashlib.sha256(open(fn,'rb').read()).hexdigest()
-open(fn + '.sha256','w').write(h + '  ' + fn + chr(10))
-print(h, fn)
-"
+          python -c "import hashlib; h=hashlib.sha256(open('$FILE','rb').read()).hexdigest(); open('$FILE'+'.sha256','w').write(h+'  '+'$FILE'+chr(10)); print(h, '$FILE')"
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
