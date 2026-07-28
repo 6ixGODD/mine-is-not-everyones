@@ -76,12 +76,16 @@ Write-Host "Skills linked."
 # --- 3. Download the prebuilt binary ---------------------------------
 if ($Ref -eq "latest") {
     $apiUrl = "https://api.github.com/repos/$ReleaseAccount/$ReleaseRepo/releases/latest"
-    $release = Invoke-RestMethod -Uri $apiUrl -Headers @{ "User-Agent" = "mine-bootstrap" }
+    try {
+        $release = Invoke-RestMethod -Uri $apiUrl -Headers @{ "User-Agent" = "mine-bootstrap" } -ErrorAction Stop
+    } catch [System.Net.WebException] {
+        throw "No published release found at $apiUrl. Publish a v* tag first, or set MINE_REF to an existing tag. GitHub response: $($_.Exception.Message)"
+    }
     $tag = $release.tag_name
 } else {
     $tag = $Ref
 }
-if (-not $tag) { throw "Could not resolve release tag." }
+if (-not $tag) { throw "Could not resolve release tag for $ReleaseAccount/$ReleaseRepo." }
 
 $target = "x86_64-pc-windows-msvc"
 $asset = "mine-$target.zip"
@@ -91,7 +95,11 @@ Write-Host "Downloading $assetUrl"
 $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ([System.IO.Path]::GetRandomFileName())
 New-Item -ItemType Directory -Path $tmp | Out-Null
 $zip = Join-Path $tmp $asset
-Invoke-WebRequest -Uri $assetUrl -OutFile $zip -Headers @{ "User-Agent" = "mine-bootstrap" }
+try {
+    Invoke-WebRequest -Uri $assetUrl -OutFile $zip -Headers @{ "User-Agent" = "mine-bootstrap" } -ErrorAction Stop
+} catch [System.Net.WebException] {
+    throw "Download failed for $asset (tag $tag). The release may not include this platform yet, or tag $tag does not exist. GitHub response: $($_.Exception.Message)"
+}
 Expand-Archive -Path $zip -DestinationPath $tmp -Force
 
 $srcExe = Join-Path $tmp "mine.exe"

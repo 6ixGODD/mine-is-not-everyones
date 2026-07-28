@@ -1,8 +1,14 @@
 # Release, checksum, bootstrap, and isolated-installation smoke tests.
 #
 # No gate masks failure. Checksums prove artifact integrity only; binary
-# reproducibility is not claimed. Release-specific jobs run on Ubuntu, Windows,
-# and macOS.
+# reproducibility is not claimed.
+#
+# Platform policy: only `quality` and `agent-install` need all three platforms
+# (they compile/test platform-conditional code and exercise real
+# junction/symlink/canonical-path filesystem APIs). `preflight`, `artifact`,
+# `bootstrap`, and `mcp-discovery` are pure logic or redundant with `quality`,
+# so they run on a single Ubuntu runner. Tag-triggered `release-artifacts`
+# builds the real per-platform binaries via its own matrix.
 #
 # This workflow does NOT publish, push, create tags, mutate master, or perform
 # stable release closure -- those steps are reserved for the independent
@@ -83,15 +89,8 @@ jobs:
 
   # --- Release preflight (validation only; can genuinely fail) ---
   preflight:
-    name: Release preflight (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - ubuntu-latest
-          - windows-latest
-          - macos-latest
+    name: Release preflight
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
@@ -116,17 +115,10 @@ jobs:
             echo "No development graph: release preflight is not applicable on the stable tree."
           fi
 
-  # --- Deterministic release artifact + SHA-256 integrity checksum ---
+  # --- Deterministic release artifact + SHA-256 integrity checksum (smoke) ---
   artifact:
-    name: Artifact + SHA-256 (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - ubuntu-latest
-          - windows-latest
-          - macos-latest
+    name: Artifact + SHA-256
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
@@ -185,21 +177,14 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mine-${{ matrix.os }}-checksums
+          name: mine-checksums
           path: mine-sha256.txt
           retention-days: 7
 
-  # --- Bootstrap smoke test (isolated temp repo, all platforms) ---
+  # --- Bootstrap smoke test (isolated temp repo) ---
   bootstrap:
-    name: Bootstrap smoke (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - ubuntu-latest
-          - windows-latest
-          - macos-latest
+    name: Bootstrap smoke
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
@@ -275,15 +260,8 @@ jobs:
 
   # --- MCP tool discovery: starts real server, verifies exactly 12 tools ---
   mcp-discovery:
-    name: MCP tool discovery (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - ubuntu-latest
-          - windows-latest
-          - macos-latest
+    name: MCP tool discovery
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
