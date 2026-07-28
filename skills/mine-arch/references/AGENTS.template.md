@@ -1,7 +1,8 @@
 # Agent Working Agreement
 
 ## Source of truth
-- Architecture and detailed design: `docs/design/architecture-and-detailed-design.md`
+- Design knowledge base root: `docs/design/index.md` (progressive disclosure; MINE owns `docs/design/`)
+- Design ownership marker: `docs/design/.mine-design.toml`
 - Execution plans: `docs/plan/`
 - Execution graph machine source: `docs/plan/execution-graph.toml`
 - Generated execution graph view: `docs/plan/execution-graph.md`

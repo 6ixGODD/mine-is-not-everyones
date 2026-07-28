@@ -8,6 +8,47 @@ description: Strictly review one implemented repository plan against AGENTS.md, 
 MINE Is Not Everyone's. Act as an independent acceptance reviewer, not as the implementing agent's advocate. Try to falsify the implementation's claims. Accept only
 when the plan's actual contract is demonstrated end to end.
 
+## Integration: MCP tools and CLI fallback
+
+`mine-plan-review` queries and transitions plan state through two paths, in
+this order of preference:
+
+1. **MCP tools (preferred)** - when the current Agent runtime exposes the
+   MINE MCP server (`mine mcp serve`), call the typed MCP tools. They return
+   the same DTOs as the JSON CLI and never touch the execution-graph files.
+2. **JSON CLI (deterministic fallback)** - when MCP is unavailable, call
+   `mine --format json` commands. Never parse human output.
+
+Never invent an MCP tool, CLI command, flag, JSON field, or lifecycle
+transition that the current binary does not expose. Never edit
+`docs/plan/execution-graph.toml` or `docs/plan/execution-graph.md` directly.
+
+The accepted MCP tools `mine-plan-review` may use:
+
+- `mine_graph_status` (no arguments) - read the current revision.
+- `mine_plan_show` (`id`) - read the target node, its predecessors, and status.
+- `mine_plan_accept` (`id`, `review`) - transition `IMPLEMENTED` -> `ACCEPTED`
+  and record the review report path.
+- `mine_plan_reject` (`id`, `reason`, `compensating_plan`) - transition
+  `IMPLEMENTED` -> `REJECTED` and register the compensating plan id.
+- `mine_graph_validate` (no arguments) - validate the graph after transitions.
+- `mine_design_validate` (no arguments) - confirm design references.
+
+Operations `mine-plan-review` needs that are intentionally **CLI-only** (no
+MCP tool exposes them, because they rewire downstream dependencies outside
+the single-node accept/reject path):
+
+- `mine plan rewire-compensation --id <rejected-plan-id> --format json` -
+  reroute downstream dependencies from a rejected plan onto its registered
+  compensating plan. There is **no MCP tool for rewiring**; after
+  `mine_plan_reject`, rewiring is a mandatory CLI fallback when downstream
+  nodes must be rerouted.
+- `mine plan release --id <id> --format json` - release a compensating plan
+  after it is registered (CLI only).
+
+When a required operation has no MCP tool, fall back to the JSON CLI and state
+the fallback explicitly.
+
 ## Resolve the review target
 
 Treat the invocation argument as exactly one immutable plan path:
@@ -25,8 +66,10 @@ path is supplied, ask for it before mutation.
 Read completely, in order:
 
 1. Root `AGENTS.md`.
-2. The architecture source named by `AGENTS.md`.
-3. Query the target node and graph revision through `mine_plan_get` / `mine_graph_status` or JSON CLI; use the generated Markdown only as a readable view.
+2. The design knowledge base rooted at `docs/design/index.md` (and the relevant leaves named by `AGENTS.md`).
+3. Query the target node and graph revision through `mine_plan_show` (MCP) or `mine plan show --id <id> --format json` (CLI fallback), and `mine_graph_status` (MCP) or `mine graph status --format json` (CLI fallback); use the generated Markdown only as a readable view.
+
+Every reviewer-initiated transition of graph state must go through the accepted MINE CLI (`mine plan accept` / `mine plan reject` with `--format json`); never edit `docs/plan/execution-graph.toml` or `docs/plan/execution-graph.md` directly (`AGENTS.md` documents this rule; the bootstrap exception has ended).
 4. The target plan.
 5. Every hard-predecessor acceptance report and referenced commit.
 6. The target implementation report, implementation commits, diff from its accepted baseline, and suggested downstream consumer plan.
@@ -88,53 +131,56 @@ Write a small independent probe when a key acceptance claim lacks discriminating
 
 ## Classify findings
 
-Classify by impact, not line count.
+Classify by impact, not line count. **A reviewer is responsible for bringing submitted work to an acceptable, mergeable state, not merely for issuing an immediate binary verdict.** Independence means independently inspecting and validating the implementation end to end — it does not mean refusing to correct a defect once it is found. Do not spawn a compensating plan, and do not consume another full implementation/review cycle, merely to preserve reviewer/implementer role purity for a narrow, well-understood correction.
 
-### Fix directly during review
+### Fix directly during review (the normal path for narrow findings)
 
-Apply a direct reviewer fix only when all are true:
+Apply a direct reviewer fix whenever all are true:
 
-- architecture and plan already specify the correct behavior unambiguously;
-- the defect is local and has no effect on persisted schema, tensor/model I/O, public API, security/privacy boundary, reward/label semantics,
-  process lifecycle, dependency graph or downstream design;
-- no product/design decision is required;
-- the fix and regression test are cohesive and fully verifiable in the current session;
-- fixing it does not hide a false implementation claim or require rewriting an immutable plan.
+- architecture and plan already specify the correct behavior unambiguously (or the fix is a release/workflow/manifest/documentation/test correction that does not change any product or design decision);
+- the defect is local and has no effect on persisted schema, a public API/tool contract, a security/privacy boundary, cross-component ownership/lifecycle, or a downstream design decision;
+- the fix and its regression coverage (a new/strengthened test, a corrected workflow step, a corrected manifest/doc line) are cohesive and fully verifiable in the current review session;
+- fixing it does not hide a false implementation claim, rewrite an immutable plan, or silently weaken a gate the plan was supposed to satisfy.
 
-Examples: typo, wrong import, missing local guard, incorrect error message, small off-by-one with an existing clear contract, missing focused test
-for behavior already correctly implemented elsewhere.
+This explicitly includes, without needing a second reviewer or a compensating plan: typos, wrong imports, missing local guards, incorrect error messages, small off-by-ones against an existing clear contract, missing focused tests for behavior already correctly implemented elsewhere, incorrect or ineffective CI/CD workflow steps (for example a masked failure condition, a missing platform in a required matrix, an incorrect path/flag), stale or contradictory documentation/Skill/template wording, a narrow release-blocking defect discovered during release-closure validation (for example a diagnostic command that discards data it should preserve, an ineffective detection gate, a version-resolution edge case), and coherent updates to generated distribution copies performed only through the accepted synchronization mechanism (never by hand-editing a generated copy directly).
 
-Patch it, add a regression test, run all affected gates, commit it separately as `fix: ...`, then re-run the complete acceptance matrix. Record
-the reviewer-authored change in the review report.
+Patch it, add or strengthen the regression test, run every affected gate (not just the one you touched), commit the correction **separately** from the plan's own commits (a clearly labeled `fix:`/`docs:`/`chore:` commit authored by the reviewer), then re-run the complete acceptance matrix against the corrected HEAD. Record the exact reviewer-authored change, its rationale, and its revalidation evidence in the review report. Never conceal a reviewer-authored change, fold it silently into the implementer's own commits, or accept without rerunning every gate the change could affect.
 
-### Require a compensating plan
+### Require a compensating plan (reserved for substantial issues)
 
-Reject and create a compensating plan when any finding changes or repairs:
+Reject and create a compensating plan only when a finding is genuinely substantial — not merely inconvenient to fix inline. Reserve this path for findings that:
 
-- methodology or training target;
-- persistent data/catalog/checkpoint schema, provenance or migration/rebuild behavior;
-- model/tensor input-output contract or feature semantics;
-- privacy, authorization, secret or hidden-information boundary;
-- cross-component ownership/lifecycle, concurrency or process cleanup;
-- external runtime/package/submission behavior;
-- multiple coupled modules or a downstream dependency;
-- missing real integration evidence central to the plan;
-- a report that claims a hard acceptance criterion without evidence.
+- require a material Design change or replace the plan's core approach/methodology;
+- change a persistent data/catalog/checkpoint schema, provenance, or migration/rebuild behavior;
+- change a public API/tool input-output contract or a security/privacy/secret/hidden-information boundary;
+- introduce or require a substantial independent work package, a major scope expansion, or coordinated changes across multiple coupled modules and a downstream dependency;
+- reveal missing real integration evidence central to the plan's own claim, such that no bounded, same-session correction could responsibly close the gap;
+- cannot be safely and fully verified within the current review session (for example, the fix itself would need its own design decision, its own dependency-aware work-package sequencing, or realistically exceeds what one reviewer can independently validate in one pass).
 
-When uncertain, prefer a compensating plan. A short diff can still be architecturally large.
+When genuinely uncertain whether a finding is narrow or substantial, weigh it against the criteria above rather than defaulting to rejection: a change that is small in line count can still be architecturally substantial (create a compensating plan), and a change that touches many files can still be narrow and mechanical (fix it directly) — for example, a corrected CI workflow, a batch of strengthened Skill-contract tests, or a synchronized set of generated distribution copies produced by the one accepted sync mechanism are narrow even when they touch several files, because they carry no new design decision and are each independently, fully verifiable in the same session.
 
 ## Accept a correct implementation
 
-Accept only when every hard acceptance item is `PASS`, required verification is reproducible, artifacts/reports are accurate, no unresolved
-finding can invalidate downstream work, and all implementation/report commits exist on the current branch.
+Accept only when every hard acceptance item is `PASS` (after any direct reviewer fixes are applied and revalidated), required verification is reproducible, artifacts/reports are accurate, no unresolved finding can invalidate downstream work, and all implementation/report/reviewer-fix commits exist on the current branch.
 
 Then:
 
-1. Create a separate review report under `docs/plan/reports/<plan-name>-review.md` rather than overwriting implementation evidence.
+1. Create a separate review report under `docs/plan/reports/<plan-name>-review.md` rather than overwriting implementation evidence. Include any reviewer-authored fixes: what changed, why, and its revalidation evidence.
 2. Record inspected commits, traceability matrix, independent commands/results, reviewer fixes and remaining non-blocking risks.
-3. Call `mine_plan_accept` or the final `mine plan accept --format json` command with the review report and expected revision; MINE releases eligible downstream nodes.
-4. Stage explicit review files only and commit with `docs: accept Plan NN ...`.
+3. Call `mine plan accept --id <id> --review <review report path> --format json` (MCP: `mine_plan_accept` with `id` and `review`); the accepted MINE CLI and MCP tool read the current revision under the lock, transitions `IMPLEMENTED`→`ACCEPTED`, records the review report, and (when combined with the released status) releases eligible downstream `BLOCKED`→`READY` successors whose hard predecessors are all now accepted. The envelope reports `revision_before`/`revision_after`.
+4. Stage explicit review and reviewer-fix files only and commit with `docs: accept Plan NN ...` (reviewer-fix commits use their own `fix:`/`chore:` subject, kept separate from this bookkeeping commit).
 5. Verify the commit and state that no worktree merge is required.
+
+## Bring release closure to completion
+
+When the accepted plan graph reaches (or, after this acceptance, will reach) an all-terminal state (`docs/design/governance/branch-and-plan-lifecycle.md` → "Release closure"; every plan `ACCEPTED` or `REJECTED` with an accepted compensation chain), the reviewer who performs the final acceptance is also responsible for carrying the release to local closure in the same session, not for spawning another plan merely to perform the remaining mechanical steps:
+
+1. Merge the just-accepted branch into `dev` with `--no-ff` and re-run the complete decisive validation suite (`cargo fmt`, `cargo clippy -D warnings -W unsafe-code`, `cargo build --all-targets --all-features`, `cargo test --all-targets --all-features` at least twice with a fresh `CARGO_TARGET_DIR`, `python scripts/sync-plugin-assets.py --check`, `python scripts/verify.py`, `mine design validate --format json`, `mine graph validate --format json`) directly on `dev`.
+2. Call `mine release --format json` (CLI-only; no MCP tool exposes release preflight) as a diagnostic before candidate construction. Its development-tree gates are decisive immediately: terminal plan state, accepted compensation for every rejected plan, valid graph/render, valid design, synchronized distribution assets, no dirty tree, no pending Agent transaction, and the authoritative resolved version from `.mine/config.toml`. Before stable integration, `can_release:false` is expected solely when the existing stable branch still contains its old `docs/plan/` workspace; do not misreport that pre-integration stable-tree fact as a failed `dev` validation. After curated stable integration, run the preflight again from `dev` and require every gate, including no `docs/plan/` or `docs/design-backup-*` on the stable branch, to pass. `mine release` is validation-only; it must never itself claim that `master`, tags, publication, or cleanup occurred.
+3. If `mine release` (or any other decisive check) fails on a narrow, release-scoped defect — not a new design decision — fix it directly in this same session exactly as in "Fix directly during review" above (own commit, own regression coverage, full revalidation), rather than opening a compensating plan solely to perform the closure.
+4. In an isolated clone or Git worktree (never the reviewer's own live checkout), construct the exact stable candidate tree per `docs/design/governance/branch-and-plan-lifecycle.md` and `docs/design/integrations/distribution.md`: the accepted `dev` tree with the ephemeral `docs/plan/` workspace removed and no tracked `docs/design-backup-*` path. Build, test, run `mine design validate` and distribution verification against the candidate; do **not** run `mine graph validate` there because the graph-less stable tree intentionally has no `docs/plan/` workspace. Graph/render validation is instead a decisive gate on `dev` before candidate construction. Install all four Agents (`claude-code`, `codex`, `pi`, `opencode`) into an explicit isolated `--config-root`, confirm `mine doctor --agents all` reports every Agent healthy on this graph-less stable candidate (a positively-identified stable branch legitimately has no `docs/plan/`; this must not be confused with an unhealthy development repository), and confirm `mine mcp serve` exposes exactly the twelve accepted MCP tools.
+5. Only after every candidate check passes, perform the Design-authorized local stable-branch integration (squash or curated commit so temporary plan history is not imported into the stable branch — never a plain merge of `dev`), determine and record the resolved release version from `.mine/config.toml`, and perform only the MINE-owned local cleanup the Design authorizes: delete local `plan/*` branches that are merged/accepted (never a branch with unexpected ancestry, an unmerged branch, or a checked-out worktree), and delete the local `dev` branch only after stable integration succeeds.
+6. Never push, create a remote release, publish a package, force-update history, or delete a remote or unrelated/user branch. Report the exact final local stable-branch commit, the resolved version, the final stable-tree contents, and every local branch or artifact removed.
 
 ## Reject and compensate
 
@@ -142,8 +188,8 @@ For a material failure:
 
 1. Do not edit the immutable target plan or rewrite its implementation report/history.
 2. Create `docs/plan/reports/<plan-name>-review.md` with `REJECTED`, exact findings, commands, evidence and affected downstream nodes.
-3. Call `mine_plan_reject` or the final JSON CLI equivalent with the review report, rejection reason, expected revision, and compensating-plan relationship; MINE keeps downstream nodes blocked.
-4. Update the architecture source first with corrected target behavior and verified failure evidence.
+3. Call `mine plan reject --id <id> --reason <rejection summary> --compensating-plan <comp-id> --format json` (MCP: `mine_plan_reject` with `id`, `reason`, `compensating_plan`); the accepted MINE CLI and MCP tool transition `IMPLEMENTED`→`REJECTED`, records the `rejection_reason` and `compensating_plan`, reads the current revision under the lock, and emits `revision_before`/`revision_after`. Downstream nodes stay blocked; rerouting of the downstream edge to the compensation node is done when the compensation plan is registered (`mine plan add --hard <comp-id>`, CLI only) and then rewired (`mine plan rewire-compensation --id <rejected-id> --format json`, CLI only - no MCP tool).
+4. Update the `docs/design/` knowledge base first with corrected target behavior and verified failure evidence.
 5. Create the repository's next compensating plan number/name (for example `02-1-...`) that identifies the rejected implementation and
    changes target code directly—no alias, shim or migration solely to preserve the rejected behavior.
 6. Give the compensation node hard predecessors, deliverables, concrete steps, verification, acceptance criteria and graph edges. Route
@@ -175,5 +221,6 @@ downstream plan.
 
 ## Finish the handoff
 
-Lead with `ACCEPTED` or `REJECTED`. Summarize decisive evidence, reviewer fixes, report/plan paths, commit hash, graph effect, verification
-results, unrelated changes preserved and next action. Say explicitly whether downstream work is released.
+Lead with `ACCEPTED` or `REJECTED`. Summarize decisive evidence, reviewer-authored fixes and their revalidation, report/plan paths, commit
+hash(es), graph effect, verification results, unrelated changes preserved, whether local release closure was carried out in this session, and
+next action. Say explicitly whether downstream work is released.

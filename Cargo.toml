@@ -1,0 +1,39 @@
+[package]
+name = "mine"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "MINE Is Not Everyone's: deterministic engineering-workflow core for Claude Code, Codex, Pi, and OpenCode"
+license = "MIT"
+authors = ["BoChen SHEN"]
+repository = "https://github.com/6ixGODD/mine-is-not-everyones"
+publish = false
+
+[lib]
+name = "mine"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mine"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+thiserror = "2"
+uuid = { version = "1", features = ["v4"] }
+time = { version = "0.3", features = ["formatting"] }
+fs4 = "1.1.0"
+serde_json = "1"
+schemars = { version = "1", features = ["preserve_order"] }
+rmcp = { version = "2.2.0", features = ["transport-io"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+# Plan 07-1: comment/ordering-preserving TOML editing for the Codex agent
+# installer config merge (avoids the destructive full-parse/reserialize
+# round trip that drops comments and formatting).
+toml_edit = "0.22"
+
+[dev-dependencies]
+tempfile = "3"
+rmcp = { version = "2.2.0", features = ["client", "transport-child-process"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

@@ -33,7 +33,13 @@ Each `PlanNode` contains:
 - exclusive, read-only, and reserved shared paths;
 - implementation and review report paths;
 - implementation commits;
-- owner, run ID, timestamps, rejection, and compensation metadata.
+- owner, run ID, timestamps, rejection, and compensation metadata. The
+  `compensating_plan` field is set by `mine plan reject` and names the
+  registered replacement plan that downstream successors are rewired onto via
+  `mine plan rewire-compensation` (see
+  `docs/design/execution-graph/state-machine-and-algorithms.md#compensation-rewiring`).
+  It is the single source of truth for compensation rewiring; no sibling-id
+  matching is ever performed.
 
 ## Safe paths
 

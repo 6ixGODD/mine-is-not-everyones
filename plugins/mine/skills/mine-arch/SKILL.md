@@ -1,6 +1,6 @@
 ---
 name: mine-arch
-description: Create or overhaul a repository's architecture source of truth at docs/design/architecture-and-detailed-design.md and initialize the repository's engineering governance. Use for new projects, weak or stale architecture, major boundary changes, or repository setup. Inspects real code and requirements, performs mandatory official-documentation research, designs abstract architecture before detailed design, applies SOLID without speculative abstraction, creates or repairs language-specific formatter/linter/type/test/CI configuration, establishes durable AGENTS.md rules, and validates the resulting quality gates.
+description: Create or overhaul a repository's modular architecture source of truth rooted at docs/design/index.md and initialize the repository's engineering governance. Use for new projects, weak or stale architecture, major boundary changes, or repository setup. Inspects real code and requirements, performs mandatory official-documentation research, designs abstract architecture before detailed design, applies SOLID without speculative abstraction, creates or repairs language-specific formatter/linter/type/test/CI configuration, establishes durable AGENTS.md rules, and validates the resulting quality gates.
 ---
 
 # MINE Architecture
@@ -10,32 +10,108 @@ Create or update the repository architecture and make the repository capable of 
 MINE Is Not Everyone's. This skill is not limited to writing prose. It owns:
 
 - architecture discovery and design;
-- the fixed architecture source-of-truth document;
+- the modular, progressive-disclosure design knowledge base rooted at `docs/design/index.md`;
 - repository-wide engineering agreements in `AGENTS.md`;
 - selection and initialization of language-appropriate quality gates;
 - creation or repair of missing formatter, linter, type-checker, test, build, pre-commit, and CI configuration;
 - validation that the documented commands actually run.
 
-## Fixed outputs
+`mine-arch` is **requirement-first** (governed by `docs/design/integrations/skills.md` and `docs/design/governance/design-knowledge-base.md`). It designs target architecture from user requirements and may intentionally differ from current code; it must **not** silently treat current code as the target architecture when the user's requirement changes that target. This makes it the requirement-first counterpart to `mine-sync`, which is code-first by intent.
 
-The architecture document path is immutable:
+## Fixed outputs (the MINE design knowledge base)
 
-`docs/design/architecture-and-detailed-design.md`
+MINE owns `docs/design/` (ADR-0006). The design tree is a **progressive-disclosure knowledge base**, not a single manuscript:
 
-Do not rename it, choose an alternative, or create competing architecture sources.
+```text
+docs/design/
+  .mine-design.toml       # ownership marker (schema_version, managed_by=MINE, repository_id, created_at)
+  index.md                # root index, links to domain indexes
+  <domain>/
+    index.md
+    <component>/
+      index.md
+      <leaf>.md           # exact contracts live here
+```
 
-Root `AGENTS.md` must name that exact file as the architecture source of truth.
+- The root index is `docs/design/index.md`; every design area owns an `index.md`.
+- Root index links to domain indexes; domain indexes link to component indexes; leaves contain exact contracts.
+- One contract has one authoritative leaf; an index may summarize a child in one or two sentences but does not duplicate its full contract.
+- Do not create a competing single-document architecture source, and do not rename `docs/design/index.md` to something else or introduce a competing `architecture-and-detailed-design.md` file.
+
+Root `AGENTS.md` must name `docs/design/index.md` (and `.mine-design.toml`) as the design source of truth, not a fixed single-document path.
 
 Read the bundled references before working:
 
-- [Architecture outline](references/architecture-outline.md)
-- [AGENTS.md template](references/AGENTS.template.md)
+- [Architecture outline](references/architecture-outline.md) — a completeness checklist, not a single-document template.
+- [AGENTS.md template](references/AGENTS.template.md) — durable repository-wide agreements only.
 
 These references are patterns, not text to copy blindly. Tailor them to the actual repository and remove inapplicable placeholders.
 
+## Integration: MCP tools and CLI fallback
+
+`mine-arch` integrates with the MINE execution graph through two paths, in this
+order of preference:
+
+1. **MCP tools (preferred)** - when the current Agent runtime exposes the
+   MINE MCP server (`mine mcp serve`), call the typed MCP tools. They return
+   the same DTOs as the JSON CLI and never touch the execution-graph files.
+2. **JSON CLI (deterministic fallback)** - when MCP is unavailable, call
+   `mine --format json` commands. Never parse human output.
+
+Never invent an MCP tool, CLI command, flag, JSON field, or lifecycle
+transition that the current binary does not expose. Never edit
+`docs/plan/execution-graph.toml` or `docs/plan/execution-graph.md` directly.
+
+The accepted MCP tools `mine-arch` may use:
+
+- `mine_design_validate` (no arguments) - validate the design namespace.
+- `mine_graph_validate` (no arguments) - validate the execution graph.
+- `mine_graph_status` (no arguments) - read revision, branches, plan count.
+
+Operations `mine-arch` needs that are intentionally **CLI-only** (no MCP tool
+exposes them, because they initialize local environment or are one-shot
+setup):
+
+- `mine init` - repository and graph initialization (no MCP equivalent; it
+  bootstraps the very configuration MCP depends on).
+- `mine design status` - marker/identity confirmation (read-only CLI only).
+- `mine graph render` - regenerate the Markdown view (CLI only).
+
+When a required operation has no MCP tool, fall back to the JSON CLI and
+state the fallback explicitly.
+
 ## MINE execution-graph integration
 
-When the `mine` binary is available, initialize repository graph governance with `mine init --format json`. The machine source of truth is `docs/plan/execution-graph.toml`; `docs/plan/execution-graph.md` is generated by `mine graph render`. Never edit either graph file directly. Record in `AGENTS.md` that all graph registration and state transitions must use the final `mine` MCP tools or JSON CLI. If `mine` is unavailable, complete architecture work but report graph initialization as blocked and provide the repository installation command.
+Initialize repository graph governance with the accepted MINE CLI:
+
+```bash
+mine init --format json
+```
+
+`mine init` is CLI-only by design (it bootstraps the repository configuration
+the MCP server itself depends on); there is no MCP tool for initialization.
+After initialization, prefer `mine_design_validate` / `mine_graph_validate`
+(MCP) or `mine design validate --format json` / `mine graph validate --format
+json` (CLI fallback) to confirm the resulting configuration.
+
+The machine source of truth is `docs/plan/execution-graph.toml`;
+`docs/plan/execution-graph.md` is generated by `mine graph render`. Never edit
+either graph file directly (`AGENTS.md` documents this rule). If `mine` is
+unavailable, complete architecture work but report graph initialization as
+blocked and provide the repository installation command.
+
+## No automatic execution
+
+`mine-arch` does not, on its own:
+
+- invoke other Skills (`mine-sync`, `mine-plan-create`, `mine-plan-exec`, `mine-plan-review`);
+- create plans, implementation reports, or execution-graph nodes;
+- create, switch, or delete Git branches or worktrees;
+- create commits, pushes, merges, or releases;
+- run `mine` write commands that transition execution-graph state;
+- modify business code to match a target design (that is `mine-plan-exec`'s role, through a plan).
+
+It writes only to MINE-owned design, repository governance (`AGENTS.md`), quality-gate configuration, and the design ownership marker. It may run `mine init` to establish graph governance and validate the resulting configuration. Handoff to `mine-plan-create` is an explicit user action, not an automatic next step.
 
 ## Non-negotiable principles
 
@@ -185,11 +261,11 @@ Also enforce:
 - strong internal types, with dynamic/untyped data contained and validated at boundaries;
 - no dead abstraction, duplicate wrapper, pass-through layer, or compatibility shim without a demonstrated need.
 
-## Phase 7: Detailed architecture document
+## Phase 7: Detailed architecture knowledge base
 
-Create or update `docs/design/architecture-and-detailed-design.md` using the bundled outline.
+Create or update the modular design knowledge base rooted at `docs/design/index.md` using the bundled outline as a completeness checklist (not a single-document template). Split the architecture across domain/component indexes and leaf contracts per the progressive-disclosure structure above.
 
-The document must be detailed enough to govern later plans and reviews. Cover all applicable areas:
+The knowledge base must be detailed enough to govern later plans and reviews. Cover all applicable areas across the relevant leaves:
 
 - technology decisions and official source register;
 - overall architecture and component boundaries;
@@ -207,7 +283,7 @@ The document must be detailed enough to govern later plans and reviews. Cover al
 
 Use diagrams where they clarify boundaries, data flow, sequence, lifecycle, state, or deployment. Diagrams supplement exact prose and contracts; they do not replace them.
 
-Do not accumulate individual plan-specific implementation history inside the architecture. Keep current target design and migration/cleanup direction, while plans and reports preserve execution history.
+Do not accumulate individual plan-specific implementation history inside the design knowledge base. Keep current target design and migration/cleanup direction, while plans and reports preserve execution history. Maintain parent indexes and cross-links as leaves are added, split, moved, or deleted.
 
 ## Phase 8: No-historical-baggage policy
 
@@ -326,7 +402,7 @@ Do not install every possible tool. A small coherent gate set with clear ownersh
 
 Use [AGENTS.md template](references/AGENTS.template.md) as a starting point, then tailor it to the repository.
 
-`AGENTS.md` must include durable repository-wide agreements:
+`AGENTS.md` must name the design knowledge base as `docs/design/index.md` (with `docs/design/.mine-design.toml` as the ownership marker), not a fixed single-document path. `AGENTS.md` must include durable repository-wide agreements:
 
 - exact source-of-truth paths;
 - governance precedence;
@@ -348,8 +424,8 @@ Never leave template placeholders or commands for tools that are not installed a
 
 Before finishing, verify:
 
-- `docs/design/architecture-and-detailed-design.md` exists at the exact path.
-- The document proceeds from abstract design to detailed design.
+- `docs/design/index.md` exists and the progressive-disclosure structure (root/domain/component indexes, leaf contracts) is intact.
+- The design proceeds from abstract design to detailed design.
 - Current reality, target, assumptions, local decisions, and unresolved decisions are separate.
 - All material external claims have opened authoritative sources and concrete links.
 - Component responsibilities and dependencies satisfy SOLID without speculative abstraction.

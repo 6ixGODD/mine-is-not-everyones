@@ -9,11 +9,51 @@ Create an implementation-ready plan from requirements, current repository eviden
 
 A completed plan is an executable engineering contract, not a brainstorm, backlog, generic checklist, or restatement of the user's request. Make it precise enough that a weak implementation agent can execute it without inventing product decisions, interfaces, algorithms, file ownership, tests, or verification commands.
 
+## Integration: MCP tools and CLI fallback
+
+`mine-plan-create` registers and queries plans through two paths, in this
+order of preference:
+
+1. **MCP tools (preferred)** - when the current Agent runtime exposes the
+   MINE MCP server (`mine mcp serve`), call the typed MCP tools. They return
+   the same DTOs as the JSON CLI and never touch the execution-graph files.
+2. **JSON CLI (deterministic fallback)** - when MCP is unavailable, call
+   `mine --format json` commands. Never parse human output.
+
+Never invent an MCP tool, CLI command, flag, JSON field, or lifecycle
+transition that the current binary does not expose. Never edit
+`docs/plan/execution-graph.toml` or `docs/plan/execution-graph.md` directly.
+
+The accepted MCP tools `mine-plan-create` may use:
+
+- `mine_graph_status` (no arguments) - read the current revision, branches,
+  and plan count (carry `data.revision` as the expected revision on writes).
+- `mine_graph_validate` (no arguments) - validate the graph after registration.
+- `mine_graph_ready` (no arguments) - read the ready frontier.
+- `mine_plan_show` (`id`) - look up a plan node.
+- `mine_plan_add` (`id`, `path`, `title`, `design_references`,
+  `exclusive_write_paths`?, `hard_predecessors`?) - register a new `DRAFT`
+  plan node.
+- `mine_design_validate` (no arguments) - confirm design references resolve.
+
+Operations `mine-plan-create` needs that are intentionally **CLI-only** (no
+MCP tool exposes them, because they are release-gate transitions outside the
+registered-add path):
+
+- `mine plan release --id <id> --format json` - move a newly registered
+  `DRAFT` plan into the startable frontier (`DRAFT` -> `READY` or `BLOCKED`).
+  There is **no MCP tool for release**; `mine_plan_add` always creates `DRAFT`,
+  so release is a mandatory CLI fallback after registration.
+- `mine workspace open|close` - ephemeral plan-workspace lifecycle (CLI only).
+
+When a required operation has no MCP tool, fall back to the JSON CLI and state
+the fallback explicitly.
+
 ## Required repository artifacts
 
 Use these exact repository paths unless an existing repository convention is stricter:
 
-- Architecture source of truth: `docs/design/architecture-and-detailed-design.md`
+- Design knowledge base root: `docs/design/index.md` (progressive disclosure; MINE owns `docs/design/`)
 - Execution plans: `docs/plan/`
 - Execution graph machine source: `docs/plan/execution-graph.toml`
 - Generated graph view: `docs/plan/execution-graph.md`
@@ -37,7 +77,7 @@ Do not reference a bundled or repository file unless it actually exists. Links i
 5. Record verified links and the exact claim each source supports inside the plan.
 6. Never finalize an implementation-ready plan when required web search or page fetching is unavailable. Report the missing research capability and leave the plan explicitly `DRAFT` or do not create it.
 7. Follow the architecture and SOLID. Do not use a plan to silently redesign the system.
-8. If the target work requires an architecture change, update `docs/design/architecture-and-detailed-design.md` first, then make the plan depend on the updated sections.
+8. If the target work requires an architecture change, update the `docs/design/` knowledge base first (the affected leaf/index), then make the plan cite the updated design paths and anchors.
 9. Do not preserve obsolete implementations merely because an earlier plan created them. Unless the user explicitly requires compatibility, change the target implementation directly and schedule cleanup of superseded fields, interfaces, parameters, adapters, migrations, aliases, and shims.
 10. Preserve unrelated user changes and never invent evidence, commands, files, APIs, tool names, test results, or external behavior.
 
@@ -69,7 +109,11 @@ In an established repository:
 1. Identify the accepted baseline and target plan frontier.
 2. Read all architecture sections, accepted reports, interfaces, and code touched by the requested change.
 3. Detect whether the request is a new feature, direct correction, refactor, migration, cleanup, or compensating plan.
-4. Do not revise an immutable handed-off or executed plan. Update architecture and create a new next-numbered compensating plan when required.
+4. Do not revise an immutable handed-off or executed plan. Update architecture and create a new next-numbered compensating plan only for a
+   substantial correction (material Design change, replaced core approach, a new independent work package, or major scope expansion). A narrow,
+   local, fully-verifiable correction — including one discovered during independent review or during release closure — is the reviewer's or
+   executor's direct fix, documented in its own report, not a new plan. Do not create a plan merely to preserve reviewer/implementer role
+   purity.
 
 ## Phase 2: Gather complete evidence
 
@@ -77,7 +121,7 @@ Read in this order:
 
 1. User requirements and supplied artifacts.
 2. Root `AGENTS.md`.
-3. `docs/design/architecture-and-detailed-design.md` in full for relevant sections, plus surrounding sections needed to understand boundaries and invariants.
+3. `docs/design/index.md` and the relevant domain/component indexes and leaves in full, plus surrounding sections needed to understand boundaries and invariants.
 4. Query the execution graph through the final `mine` MCP tools or `mine --format json`; use the generated Markdown only as a readable view.
 5. Relevant existing plans and implementation/review reports.
 6. Repository manifests, lockfiles, toolchain files, CI, deployment files, generated-schema ownership, and Git status/history relevant to the work.
@@ -168,7 +212,7 @@ Also verify:
 - no speculative abstraction or interface with only imagined consumers;
 - no obsolete compatibility layer unless explicitly required.
 
-If the accepted architecture cannot support the request cleanly, update the architecture first. Include exact architecture section links in the plan.
+If the accepted design knowledge base cannot support the request cleanly, update the relevant `docs/design/` leaf/index first. Include exact design paths (and anchors where applicable) in the plan.
 
 ## Phase 7: Design for parallel execution
 
@@ -249,20 +293,37 @@ Never label an unrun command, timeout, unavailable dependency, ignored diagnosti
 
 Do not edit `docs/plan/execution-graph.toml` or `docs/plan/execution-graph.md` directly. After the plan document is complete:
 
-1. Read the current graph revision using `mine_graph_status` or `mine graph status --format json`.
-2. Register the plan using `mine_plan_add` or the final `mine plan add --format json` command.
-3. Supply exact hard/soft predecessors, exclusive write paths, read-only paths, and reserved shared paths from the plan.
-4. Carry `expected_revision` on every write.
-5. Run `mine_graph_validate` or `mine graph validate --format json`.
-6. Report the returned plan status, revision, READY frontier, and parallel wave.
+1. Read the current graph revision: call `mine_graph_status` (MCP) or `mine
+   graph status --format json` (CLI fallback). The envelope's `data.revision`
+   is the current revision; carry it as `expected_revision` on the write.
+2. Register the plan: call `mine_plan_add` (MCP) with `id`, `path`, `title`,
+   `design_references`, and optional `exclusive_write_paths` /
+   `hard_predecessors`; or `mine plan add --format json` (CLI fallback) with
+   `--id`, `--path`, `--title`, at least one `--design-ref`, and any `--write`
+   / `--hard` (repeat for multiple values). Registration always creates a
+   `DRAFT` node.
+3. **Release the plan** (CLI-only - no MCP tool exposes release): call
+   `mine plan release --id <id> --format json` to move the new `DRAFT` node
+   into the startable frontier (`DRAFT` -> `READY` when every hard predecessor
+   is `ACCEPTED`; `DRAFT` -> `BLOCKED` otherwise). This is a mandatory CLI
+   fallback because `mine_plan_add` always creates `DRAFT`.
+4. Validate the graph: call `mine_graph_validate` (MCP) or `mine graph
+   validate --format json` (CLI fallback) after registration and release.
+5. Report the returned revision before/after and the new plan's status
+   (`DRAFT`, `READY`, or `BLOCKED`).
 
-MCP is preferred. JSON CLI is the fallback. Never parse human output. If the installed command/tool contract differs from this draft, use the final implemented contract and update this Skill before release.
+The accepted MINE CLI and MCP tools read the current revision themselves
+before mutating under the lock, so an explicit `expected_revision` argument is
+**not** required; every mutation envelope emits `revision_before`/
+`revision_after`. Never parse human output. Never edit the graph files
+directly. If the installed command contract differs from this draft, use the
+actual implemented contract and update this Skill before release.
 
 ## Final review gates
 
 Before finishing, verify all of the following:
 
-- The architecture file exists at the fixed path and every cited section is real.
+- The cited `docs/design/` leaves/anchors exist and every cited section is real.
 - Architecture changes were made before the dependent plan.
 - Mandatory web research was completed using opened authoritative pages.
 - Every external link is real, current enough for the decision, and tied to a claim.

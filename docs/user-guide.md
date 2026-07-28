@@ -187,20 +187,20 @@ The stable tree retains code and `docs/design/`, not the process used to create 
 
 ## Manual inspection commands
 
-These are useful but not required for normal flow:
+These are useful but not required for normal flow. All of these accept `--format json` for stable machine-consumable envelopes (and `--repo <path>` to target a different repository root); this guide shows the human form.
 
 ```bash
 mine status
-mine doctor --agents all
+mine doctor
 mine design status
 mine design validate
 mine graph status
 mine graph ready
 mine graph wave
-mine plan show <id>
+mine plan show --id <id>
 ```
 
-Agent-facing mutations use typed MCP tools when available and stable JSON CLI output as fallback.
+Agent-facing mutations go through the accepted `mine` CLI subcommands (`mine plan add|start|implemented|accept|reject`, `mine graph render`, `mine workspace open|status|close`, `mine design backup|validate|status`, `mine repository version show|suggest|set`), all with `--format json`. When a typed MCP bridge is accepted, prefer it and fall back to `--format json` CLI. Never edit `docs/plan/execution-graph.toml` or `docs/plan/execution-graph.md` directly.
 
 ## Supported clients
 

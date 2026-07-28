@@ -1,0 +1,3 @@
+# MINE runtime and locks are local diagnostics, not fact sources.
+runtime/
+locks/

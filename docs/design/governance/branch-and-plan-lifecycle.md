@@ -59,11 +59,52 @@ The first model-driven action is invoked explicitly by the user:
 - `mine-arch` for requirement-first design;
 - `mine-sync` for code-first onboarding or reconciliation.
 
+## Compensation and downstream rewiring
+
+When a plan is rejected (`mine plan reject --compensating-plan <id>`), closing
+the rejection has two independent, CLI-managed steps. **Neither edits the
+execution graph by hand**; the bootstrap exception that allowed manual
+rerouting (e.g. Plan `02` -> `02-1` during bootstrap) has ended.
+
+1. **Register the compensating plan** with `mine plan add`, whose hard
+   predecessor is the rejected plan's accepted upstream (not the rejected
+   plan itself).
+2. **Rewire downstream successors** off the rejected plan onto the
+   compensating plan with
+   `mine plan rewire-compensation --id <rejected-plan-id>`
+   (see
+   `docs/design/execution-graph/state-machine-and-algorithms.md#compensation-rewiring`).
+   The replacement is derived from the rejected plan's `compensating_plan`
+   field; the caller never supplies a replacement, so no similar-id
+   substitution can occur.
+
+A rejected plan is terminal; it is not revived or re-statused. Accepted and
+active successors (`IN_PROGRESS`/`IMPLEMENTED`/`ACCEPTED`/`REJECTED`) are
+never rewritten by compensation rewiring, preserving their immutability.
+Downstream work that depended on the rejected plan may only resume after the
+rewiring is accepted into `dev` and the compensating plan is itself accepted.
+
 ## Plan workspace creation
 
 `mine-plan-create` ensures `dev` exists, switches to it, and opens an internal plan workspace when absent.
 
 The workspace has a generated `workspace_id`; the user does not supply a workspace version. The workspace marker records repository ID, stable baseline commit, integration branch, creation time, and MINE ownership.
+
+## Registration and release
+
+`mine plan add` **registers** a plan as `DRAFT`: it records identity, design
+references, write paths, and dependencies, but makes no claim about whether
+the plan may execute. `mine plan release --id <plan-id>` is the explicit,
+deterministic gate that moves a `DRAFT` plan into the startable frontier
+(`READY` when all hard predecessors are `ACCEPTED`, otherwise `BLOCKED`). The
+distinction between registration and release is deliberate and must be
+preserved: a freshly added plan never becomes silently executable.
+
+Automatic successor release inside `mine plan accept` is unchanged: accepting
+a plan may release `BLOCKED` successors whose hard predecessors are all now
+accepted, in the same accept transaction. `mine plan release` covers the
+standalone case (a newly registered `DRAFT` plan with no pending accepted
+upstream), which the accept pass cannot reach.
 
 ## During development
 
@@ -74,6 +115,26 @@ The workspace has a generated `workspace_id`; the user does not supply a workspa
 - Every plan references exact design paths and anchors.
 - Execution agents commit scoped implementation but never self-accept.
 - Review agents may merge accepted work into `dev` and remove the local accepted plan branch.
+
+## Reviewer authority to correct, not only to verdict
+
+A reviewer's independence is about independently inspecting and validating a submitted implementation, never about a prohibition on correcting
+a defect once found. A reviewer is responsible for bringing submitted work to an acceptable, mergeable state:
+
+- Reviewers may directly apply localized corrections — a local code fix, a strengthened or added test, a corrected CI/CD workflow step, a
+  corrected manifest or generated-copy synchronization, a documentation/Skill-wording correction, or a narrow release-closure blocker — when
+  the correct behavior is already unambiguous from the accepted Design and the plan, the fix carries no new product/design decision, and it is
+  fully verifiable in the same review session.
+- Reviewer-authored corrections are committed as their own explicit, separately labeled commit(s) and are described in the review report
+  (what changed, why, and its revalidation evidence); they are never concealed, folded silently into the implementer's commits, or accepted
+  without rerunning every gate the change could affect.
+- A localized reviewer correction does not require a second reviewer, and does not by itself require a new compensating plan solely to
+  preserve reviewer/implementer role separation.
+- `REJECTED` plus a compensating plan is reserved for material Design changes, replacement of the core approach, a substantial independent
+  work package, major scope expansion, or a finding that cannot be safely and fully completed within the current review session.
+- During final release closure, a narrow release blocker (for example an ineffective validation gate, a missing CI matrix leg, or a
+  diagnostic command that drops data it should preserve) is normally fixed and documented directly in the same closure session rather than
+  deferred to another plan.
 
 ## Release closure
 
