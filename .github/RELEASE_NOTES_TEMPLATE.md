@@ -1,14 +1,3 @@
-# Release notes template
-
-This file is the hand-written portion of each GitHub Release body. The release
-workflow prepends the git-cliff-generated changelog and appends this file's
-contents, so a release note = auto changelog + short install/usage section.
-
-Keep it short. Installation detail lives in the README; here only summarize
-how to get this release running.
-
----
-
 ## Install
 
 One command (no Rust toolchain required):
@@ -26,5 +15,6 @@ If `mine` is already installed: `mine update`.
 
 ## Assets
 
-Each platform archive ships `mine` (or `mine.exe`) plus README and LICENSE, with
-a matching `.sha256` sidecar. Verify with `sha256sum -c mine-<platform>.tar.gz.sha256`.
+Each platform archive ships `mine` (or `mine.exe`) plus README and LICENSE,
+with a matching `.sha256` sidecar. Verify with
+`sha256sum -c mine-<platform>.tar.gz.sha256`.
