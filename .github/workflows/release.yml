@@ -217,9 +217,9 @@ jobs:
           echo "Bootstrap smoke test passed"
           rm -rf "$TMP"
 
-  # --- Isolated Agent installation + doctor smoke (all platforms) ---
+  # --- Isolated mine setup + doctor smoke (all platforms) ---
   agent-install:
-    name: Agent install + doctor (${{ matrix.os }})
+    name: mine setup + doctor (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -244,18 +244,19 @@ jobs:
         with:
           python-version: "3.x"
 
-      - name: Agent install + doctor (isolated config root)
+      - name: mine setup + doctor (isolated config root, non-interactive)
         shell: bash
         run: |
           set -e
           TMP=$(mktemp -d)
-          for agent in claude-code codex pi opencode; do
-            echo "=== Installing $agent ==="
-            ./target/debug/mine --repo . agent install "$agent" --config-root "$TMP" --format json
-          done
+          # Non-TTY CI: exercise the mine setup non-interactive path with an
+          # explicit agent list and isolated config root. This installs all
+          # four agents (MCP + Skills) exactly as bootstrap would on a user
+          # machine with --agents.
+          ./target/debug/mine setup --agents claude-code,codex,pi,opencode --yes --config-root "$TMP" --format json
           echo "=== Doctor ==="
           ./target/debug/mine --repo . doctor --agents all --config-root "$TMP" --format json
-          echo "Agent install smoke test passed"
+          echo "mine setup smoke test passed"
           rm -rf "$TMP"
 
   # --- MCP tool discovery: starts real server, verifies exactly 12 tools ---

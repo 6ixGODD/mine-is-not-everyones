@@ -176,10 +176,16 @@ pub fn dispatch(argv: &[String], program: &str) -> Outcome {
 
     let tokens = &parsed.tokens;
     let group = tokens[0].as_str();
-    let sub = tokens.get(1).map(String::as_str).unwrap_or("");
+    // A group may take a subcommand as tokens[1]. If tokens[1] is a flag
+    // (starts with `--`) or absent, the group has no subcommand (e.g.
+    // `mine setup --agents ...`, `mine release`, `mine status`), so `sub` is
+    // empty and the rest starts at index 1.
+    let sub_token = tokens.get(1).map(String::as_str).unwrap_or("");
+    let has_sub = !sub_token.is_empty() && !sub_token.starts_with("--");
+    let sub = if has_sub { sub_token } else { "" };
     let command = command_name(group, sub);
 
-    let rest_start = tokens.len().min(2);
+    let rest_start = if has_sub { 2 } else { 1 };
     let rest = &tokens[rest_start..];
     match commands::handle(&parsed, group, sub, rest) {
         Ok((envelope, human)) => Outcome {
@@ -228,6 +234,14 @@ fn command_name(group: &str, sub: &str) -> &'static str {
         ("design", "status") => "design.status",
         ("repository", "version") => "repository.version",
         ("repository", _) => "repository.version",
+        ("setup", _) => "setup",
+        ("update", _) => "update",
+        ("uninstall", _) => "uninstall",
+        ("agent", "install") => "agent.install",
+        ("agent", "uninstall") => "agent.uninstall",
+        ("agent", "status") => "agent.status",
+        ("agent", "config") => "agent.config",
+        ("release", _) => "release",
         _ => "usage",
     }
 }

@@ -89,6 +89,7 @@ pub fn exit_code_for(err: &MineError) -> i32 {
         // here we map generic GraphInvalid to VALIDATION and rely on the
         // command layer to elevate the partial-success case.
         MineError::Io(_) => exit_code::EXTERNAL,
+        MineError::ExternalDependency { .. } => exit_code::EXTERNAL,
     }
 }
 

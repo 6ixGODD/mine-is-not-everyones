@@ -110,6 +110,9 @@ pub fn handle(
             _ => Err(HandlerError::usage("unknown mcp subcommand: serve")),
         },
         "release" => release_preflight(parsed, rest),
+        "setup" => setup(parsed, rest),
+        "update" => update(parsed, rest),
+        "uninstall" => uninstall(parsed, rest),
         "dist" => match sub {
             "sync" => dist_sync(parsed, rest),
             "verify" => dist_verify(parsed, rest),
@@ -1553,4 +1556,84 @@ fn dist_verify(parsed: &crate::cli::ParsedArgs, rest: &[String]) -> HandlerResul
         env,
         vec![HumanLine::Section(format!("dist verify: {stdout}"))],
     ))
+}
+
+// ----------------------------------------------------------------------------
+// mine setup / mine update / mine uninstall — end-user installer lifecycle.
+// ----------------------------------------------------------------------------
+
+fn setup(_parsed: &crate::cli::ParsedArgs, rest: &[String]) -> HandlerResult {
+    let (flags, _pos) = parse_flags(rest);
+    let agents = flag(&flags, "agents").map(|s| s.to_string());
+    let yes = flags.iter().any(|(k, _)| k == "yes" || k == "y");
+    let config_root = flag(&flags, "config-root").map(std::path::PathBuf::from);
+    let args = crate::setup::SetupArgs {
+        agents,
+        yes,
+        config_root,
+    };
+    let report = crate::setup::run_setup(&args).map_err(|e| HandlerError::from_mine(&e))?;
+    let env_data =
+        envelope_for("setup", None).with_data(serde_json::to_value(&report).unwrap_or(Value::Null));
+    let mut lines = vec![HumanLine::Section(format!(
+        "mine setup: {}",
+        report.version_note
+    ))];
+    if !report.installed.is_empty() {
+        lines.push(HumanLine::Field {
+            key: "  installed".to_string(),
+            value: report.installed.join(", "),
+        });
+    }
+    if !report.uninstalled.is_empty() {
+        lines.push(HumanLine::Field {
+            key: "  uninstalled".to_string(),
+            value: report.uninstalled.join(", "),
+        });
+    }
+    if !report.errors.is_empty() {
+        lines.push(HumanLine::Field {
+            key: "  errors".to_string(),
+            value: report.errors.join("; "),
+        });
+    }
+    Ok((env_data, lines))
+}
+
+fn update(_parsed: &crate::cli::ParsedArgs, rest: &[String]) -> HandlerResult {
+    let (flags, _pos) = parse_flags(rest);
+    let yes = flags.iter().any(|(k, _)| k == "yes" || k == "y");
+    let args = crate::setup::UpdateArgs { yes };
+    let report = crate::setup::run_update(&args).map_err(|e| HandlerError::from_mine(&e))?;
+    let env_data = envelope_for("update", None)
+        .with_data(serde_json::to_value(&report).unwrap_or(Value::Null));
+    let lines = vec![HumanLine::Section(format!(
+        "mine update: {} -> {} ({})",
+        report.from, report.to, report.note
+    ))];
+    Ok((env_data, lines))
+}
+
+fn uninstall(_parsed: &crate::cli::ParsedArgs, rest: &[String]) -> HandlerResult {
+    let (flags, _pos) = parse_flags(rest);
+    let yes = flags.iter().any(|(k, _)| k == "yes" || k == "y");
+    let args = crate::setup::UninstallArgs { yes };
+    let report = crate::setup::run_uninstall(&args).map_err(|e| HandlerError::from_mine(&e))?;
+    let env_data = envelope_for("uninstall", None)
+        .with_data(serde_json::to_value(&report).unwrap_or(Value::Null));
+    let mut lines = vec![HumanLine::Section(format!(
+        "mine uninstall: {}",
+        report.note
+    ))];
+    if !report.agents_cleared.is_empty() {
+        lines.push(HumanLine::Field {
+            key: "  agents cleared".to_string(),
+            value: report.agents_cleared.join(", "),
+        });
+    }
+    lines.push(HumanLine::Field {
+        key: "  binary removed".to_string(),
+        value: report.binary_removed.to_string(),
+    });
+    Ok((env_data, lines))
 }

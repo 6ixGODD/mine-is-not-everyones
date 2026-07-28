@@ -25,3 +25,4 @@ pub mod infrastructure;
 pub mod mcp;
 pub mod output;
 pub mod render;
+pub mod setup;

@@ -102,7 +102,7 @@ Requires Rust 1.85:
 
 ```sh
 cargo install --path . --locked
-./scripts/install.sh
+mine setup
 ```
 
 </details>

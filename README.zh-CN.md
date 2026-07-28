@@ -102,7 +102,7 @@ irm https://raw.githubusercontent.com/6ixGODD/mine-is-not-everyones/master/scrip
 
 ```sh
 cargo install --path . --locked
-./scripts/install.sh
+mine setup
 ```
 
 </details>

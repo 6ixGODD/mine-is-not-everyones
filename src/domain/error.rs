@@ -175,6 +175,10 @@ pub enum MineError {
         original_message: String,
         rollback_detail: String,
     },
+    /// An external dependency failed (network, GitHub Release lookup, binary
+    /// download). Used by `mine setup` / `mine update` lifecycle operations.
+    #[error("external dependency failure: {detail}")]
+    ExternalDependency { detail: String },
 }
 
 impl MineError {
@@ -207,6 +211,7 @@ impl MineError {
             Self::AgentBackupFailed { .. } => "MINE_AGENT_BACKUP_FAILED",
             Self::AgentTransactionIncomplete { .. } => "MINE_AGENT_TRANSACTION_INCOMPLETE",
             Self::AgentRollbackFailed { .. } => "MINE_AGENT_ROLLBACK_FAILED",
+            Self::ExternalDependency { .. } => "MINE_EXTERNAL_DEPENDENCY",
         }
     }
 }
