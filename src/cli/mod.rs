@@ -426,7 +426,7 @@ fn repository_route(a: &RepositoryCmd) -> (&'static str, &'static str, Vec<Strin
             VersionCmd::Set { version } => (
                 "repository",
                 "version",
-                vec!["set".to_string(), version.clone()],
+                vec!["set".to_string(), "--version".to_string(), version.clone()],
                 "repository.version",
             ),
         },

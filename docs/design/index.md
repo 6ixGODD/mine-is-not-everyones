@@ -4,7 +4,7 @@
 
 This directory is the durable source of architectural truth for MINE. It uses progressive disclosure: humans and agents begin here and follow only the indexes needed for the current task.
 
-MINE owns the `docs/design/` namespace. A managed tree contains `.mine-design.toml`. Legacy unmarked content is rejected rather than migrated implicitly.
+MINE owns the `docs/design/` namespace. A managed tree contains `.mine-design.toml`. When `mine init` encounters an existing unmarked `docs/design/`, it moves the legacy directory aside to a timestamped `docs/design-backup-<UTC timestamp>/` backup and creates a fresh managed root; it does not abort and does not guess how to migrate arbitrary legacy content. `mine-sync` and later operations refuse an unmarked or foreign-owned `docs/design/` only when `mine init` has not been run.
 
 ## Product statement
 
@@ -45,12 +45,10 @@ stable release without docs/plan
 ### Existing repository
 
 ```text
-rename/remove legacy non-MINE docs/design
-    ↓
-mine init
+mine init   (auto-backs-up legacy non-MINE docs/design/)
     ↓
 mine-sync [optional scope]
-    └─ code → descriptive design baseline
+    └─ code -> descriptive design baseline
     ↓
 mine-arch <new requirements>
     └─ baseline → target design

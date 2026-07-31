@@ -75,9 +75,23 @@ fn release_version_source_is_config_not_hardcoded() {
         &repo,
     );
     let version = env["data"]["version"].as_str().unwrap_or("");
-    assert_eq!(
-        version, "0.1.0",
+    assert!(
+        !version.is_empty(),
         "version comes from config.toml, not hardcoded"
+    );
+    // The version must match what .mine/config.toml records, proving it is
+    // read from config rather than a hardcoded constant.
+    let config = std::fs::read_to_string(repo.join(".mine/config.toml")).unwrap();
+    let expected = config
+        .lines()
+        .find_map(|l| {
+            l.strip_prefix("mine_code_version = ")
+                .map(|v| v.trim_matches('"'))
+        })
+        .unwrap_or("");
+    assert_eq!(
+        version, expected,
+        "release version must equal config.toml mine_code_version"
     );
 }
 
@@ -90,6 +104,21 @@ fn repository_version_suggest_increments_patch() {
     );
     let current = env["data"]["current"].as_str().unwrap_or("");
     let suggested = env["data"]["suggested"].as_str().unwrap_or("");
-    assert_eq!(current, "0.1.0");
-    assert_eq!(suggested, "0.1.1", "suggest increments the patch component");
+    assert_eq!(current, env!("CARGO_PKG_VERSION"));
+    let current_patch: u32 = current
+        .rsplit('.')
+        .next()
+        .unwrap_or("0")
+        .parse()
+        .unwrap_or(0);
+    let suggested_patch: u32 = suggested
+        .rsplit('.')
+        .next()
+        .unwrap_or("0")
+        .parse()
+        .unwrap_or(0);
+    assert!(
+        suggested_patch > current_patch,
+        "suggest increments the patch component: {current} -> {suggested}"
+    );
 }

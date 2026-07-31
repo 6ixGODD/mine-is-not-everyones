@@ -1,5 +1,14 @@
 # MINE Documentation
 
+## Start here
+
+Pick the entry point for your goal:
+
+- **[Using MINE](user-guide.md)** — install, initialize, run the workflow day to day.
+- **[Design index](design/index.md)** — understand or develop MINE itself; the durable architecture source of truth.
+- **[Installation & lifecycle](user-guide.md#installation)** — `mine setup`, `mine update`, `mine uninstall`, `mine --version`.
+- **[Release & governance](design/governance/branch-and-plan-lifecycle.md)** — branch roles, plan lifecycle, and release closure.
+
 MINE documentation has two deliberately different lifecycles.
 
 ## Long-lived design knowledge
@@ -8,7 +17,7 @@ MINE documentation has two deliberately different lifecycles.
 
 Start with [`design/index.md`](design/index.md). Follow indexes and open only the leaf documents relevant to the current task.
 
-A managed design tree must contain `docs/design/.mine-design.toml`. An existing unmarked `docs/design/` is a namespace conflict, not a migration opportunity. Rename or remove legacy content before `mine init`.
+A managed design tree must contain `docs/design/.mine-design.toml`. When `mine init` finds an existing unmarked `docs/design/`, it moves the legacy directory aside to a timestamped `docs/design-backup-<UTC timestamp>/` backup and creates a fresh managed root; it does not abort. `mine-sync` refuses an unmarked or foreign-owned `docs/design/` only after `mine init` has established the managed namespace.
 
 ## Local design backups
 

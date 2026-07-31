@@ -164,24 +164,50 @@ The user does not manually provide a development-cycle version. `mine-plan-creat
 
 ## Release closure
 
-After all plans are accepted, invoke a final full-repository sync:
+Release closure has two phases owned by different actors.
+
+### Phase A - final design reconciliation (repository owner)
+
+After all plans are accepted and integrated into `dev`, invoke a final full-repository sync:
 
 ```text
 mine-sync prepare this repository for stable release
 ```
 
-The release agent must:
+This reconciles accepted implementation into `docs/design/`, resolves or reports every incomplete area, and validates the complete repository. It is a separate, deliberate session.
 
-1. reconcile accepted implementation into `docs/design/`;
-2. resolve or report every incomplete or uncertain area;
-3. validate the complete repository and supported client integrations;
-4. determine the next MINE code-repository version;
-5. safely purge the MINE-owned `docs/plan/` workspace;
-6. verify the stable release tree contains no plan files or local backups;
-7. integrate accepted state into the stable branch without importing temporary plan history;
-8. delete temporary managed branches.
+### Phase B - mechanical release closure (mine-plan-review)
+
+After the final sync, the reviewer performs the mechanical closure:
+
+1. confirm the final `mine-sync` has completed (the reviewer does not run it);
+2. run `mine release --format json` preflight plus the repository's own decisive validation;
+3. determine the next MINE code-repository version;
+4. safely purge the MINE-owned `docs/plan/` workspace;
+5. verify the stable release tree contains no plan files or local backups;
+6. integrate accepted state into the stable branch without importing temporary plan history;
+7. delete temporary managed branches.
+
+The reviewer never pushes, creates a remote release, or publishes a package. Remote publication remains explicitly outside MINE's authority.
 
 The stable tree retains code and `docs/design/`, not the process used to create them.
+
+## Installation and lifecycle
+
+After bootstrap installation (see the README), these CLI commands manage the MINE lifecycle:
+
+```bash
+mine --version          # verify the installed binary
+mine doctor --agents all  # show managed agent integrations and health
+mine setup              # (re)install MINE into coding agents (interactive)
+mine setup --agents claude-code,codex --yes  # non-interactive, specific agents
+mine update             # update the binary to the latest release
+mine uninstall         # remove MINE from all agents and this machine
+```
+
+`mine setup` is **global machine setup** (installs Skills and MCP config into agent client directories). `mine init` is **repository-local** (creates `.mine/config.toml`, the design namespace, and governance at a repository root). Run `mine setup` once per machine; run `mine init` once per repository.
+
+Non-interactive flags: `--agents <list>` (comma-separated slugs), `--yes` (skip prompts), `--config-root <path>` (isolated install for CI/tests).
 
 ## Manual inspection commands
 

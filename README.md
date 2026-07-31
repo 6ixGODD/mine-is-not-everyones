@@ -73,7 +73,7 @@ irm https://raw.githubusercontent.com/6ixGODD/mine-is-not-everyones/master/scrip
 curl -fsSL https://raw.githubusercontent.com/6ixGODD/mine-is-not-everyones/master/scripts/bootstrap.sh | sh
 ```
 
-Reopen your terminal after install. Windows installs to `%LOCALAPPDATA%\Programs\mine`; Linux/macOS to `~/.local/bin`.
+Reopen your terminal after install. Windows installs to `%LOCALAPPDATA%\Programs\mine`; Linux/macOS to `~/.local/bin`. For setup, updates, and uninstall lifecycle see the [User guide](docs/user-guide.md#installation-and-lifecycle).
 
 ### Pinning a version
 

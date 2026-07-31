@@ -24,7 +24,7 @@ The MINE scaffold exists but contains no real architecture, or the design root i
 
 ### Legacy unmarked `docs/design/`
 
-This is a namespace conflict. `mine-sync` and `mine init` must refuse to continue. The user must rename or remove the legacy directory. MINE does not guess whether old documents are authoritative, compatible, or safe to overwrite.
+An unmarked `docs/design/` is a namespace conflict for `mine-sync`, which refuses to operate on a tree `mine init` has not claimed. `mine init` resolves the conflict deterministically: it moves the legacy directory aside to a timestamped `docs/design-backup-<UTC timestamp>/` backup and creates a fresh managed root. After `mine init`, `mine-sync` operates on the managed tree. MINE never guesses whether old documents are authoritative, compatible, or safe to overwrite.
 
 ## Mandatory backup before rewrite
 

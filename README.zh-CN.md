@@ -73,7 +73,7 @@ irm https://raw.githubusercontent.com/6ixGODD/mine-is-not-everyones/master/scrip
 curl -fsSL https://raw.githubusercontent.com/6ixGODD/mine-is-not-everyones/master/scripts/bootstrap.sh | sh
 ```
 
-装好后需要重启终端。Windows 安装到 `%LOCALAPPDATA%\Programs\mine`，Linux/macOS 安装到 `~/.local/bin`。
+装好后需要重启终端。Windows 安装到 `%LOCALAPPDATA%\Programs\mine`，Linux/macOS 安装到 `~/.local/bin`。安装、更新与卸载的生命周期管理见[用户指南](docs/user-guide.md#installation-and-lifecycle)。
 
 ### 指定版本
 

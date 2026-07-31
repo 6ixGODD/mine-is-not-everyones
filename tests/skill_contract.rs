@@ -367,13 +367,9 @@ fn user_guide_lists_supported_clients_only_and_no_imaginary_commands() {
             && guide.contains("OpenCode"),
         "user guide lists the four supported clients"
     );
-    // The earlier draft referenced `mine doctor --agents all` and `mine plan show <id>`
-    // without the --id flag. Those are imaginary/incorrect; verify the guide
-    // uses the real forms.
-    assert!(
-        !guide.contains("mine doctor --agents"),
-        "user guide must not show an imaginary `mine doctor --agents` flag"
-    );
+    // `mine doctor --agents <scope>` is a real, accepted flag (verified against
+    // the built binary). The guide may use it. Verify the guide does not show
+    // the incorrect `mine plan show <id>` form (must use --id).
     assert!(
         guide.contains("mine plan show --id <id>"),
         "user guide must use `mine plan show --id <id>`"
@@ -486,5 +482,137 @@ fn review_skill_requires_stale_plan_reference_scan_at_release_closure() {
     assert!(
         source.contains("--check") && source.contains("docs/plan"),
         "the scanner must offer a failing release gate while excluding the temporary plan workspace"
+    );
+}
+
+#[test]
+fn review_skill_has_no_mine_specific_validation_commands() {
+    let review = skill("mine-plan-review");
+    // MINE's own cargo/python commands must not appear in the generic review Skill.
+    for forbidden in [
+        "cargo fmt",
+        "cargo clippy",
+        "cargo build",
+        "cargo test",
+        "sync-plugin-assets",
+        "verify.py",
+    ] {
+        assert!(
+            !review.contains(forbidden),
+            "mine-plan-review SKILL.md must not contain MINE-specific command `{forbidden}`"
+        );
+    }
+}
+
+#[test]
+fn review_skill_discovers_validation_from_repository_governance() {
+    let review = skill("mine-plan-review");
+    assert!(
+        review.contains("explicit current user instructions"),
+        "review Skill must state the authority order for validation discovery"
+    );
+    assert!(
+        review.contains("AGENTS.md"),
+        "review Skill must reference repository governance as a validation authority"
+    );
+    assert!(
+        review.contains("Never invent Cargo, Python, Node, Go"),
+        "review Skill must forbid presuming a specific toolchain"
+    );
+}
+
+#[test]
+fn review_skill_does_not_invoke_mine_sync() {
+    let review = skill("mine-plan-review");
+    // The reviewer confirms the final sync was run by the owner but does not run it.
+    assert!(
+        review.contains("does **not** invoke `mine-sync`"),
+        "review Skill must state the reviewer does not invoke mine-sync"
+    );
+}
+
+#[test]
+fn scan_plan_refs_scans_go_layout_and_excludes_docs() {
+    use std::process::Command;
+    // Read the scanner source and pipe it via stdin so bash finds it regardless
+    // of Windows/Unix path format; current_dir is the temp repo so the
+    // scanner's `git rev-parse` targets it.
+    let scanner_src =
+        read(&repo_root().join("skills/mine-plan-review/references/scan-plan-refs.sh"));
+    let tmp = tempfile::tempdir().unwrap();
+
+    // Go-layout file that would have been missed by the old src/-only scan.
+    let go_dir = tmp.path().join("cmd");
+    std::fs::create_dir_all(&go_dir).unwrap();
+    std::fs::write(
+        go_dir.join("main.go"),
+        // mine-release-allow-plan-reference: scanner test fixture
+        "package main\n// Plan 99 historical comment\nfunc main() {}\n",
+    )
+    .unwrap();
+
+    // Documentation that must NOT be flagged.
+    let design_dir = tmp.path().join("docs").join("design");
+    std::fs::create_dir_all(&design_dir).unwrap();
+    // mine-release-allow-plan-reference: scanner test fixture
+    std::fs::write(design_dir.join("arch.md"), "# Plan 99 in design doc\n").unwrap();
+
+    let _git = Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(tmp.path())
+        .status()
+        .unwrap();
+    let _cfg1 = Command::new("git")
+        .args(["config", "user.email", "t@t.t"])
+        .current_dir(tmp.path())
+        .status()
+        .unwrap();
+    let _cfg2 = Command::new("git")
+        .args(["config", "user.name", "t"])
+        .current_dir(tmp.path())
+        .status()
+        .unwrap();
+    let _add = Command::new("git")
+        .args(["add", "-A"])
+        .current_dir(tmp.path())
+        .status()
+        .unwrap();
+    let _commit = Command::new("git")
+        .args(["commit", "-qm", "test"])
+        .current_dir(tmp.path())
+        .status()
+        .unwrap();
+
+    use std::io::Write;
+    let mut child = Command::new("bash")
+        .arg("-s")
+        .arg("--")
+        .arg("--check")
+        .current_dir(tmp.path())
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    {
+        let mut stdin = child.stdin.take().unwrap();
+        stdin.write_all(scanner_src.as_bytes()).unwrap();
+    }
+    let out = child.wait_with_output().unwrap();
+    assert!(
+        !out.status.success(),
+        // mine-release-allow-plan-reference: scanner test fixture
+        "scanner must flag Plan 99 in cmd/main.go (Go layout)"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let combined = format!("{stdout}{stderr}");
+    assert!(
+        combined.contains("cmd/main.go"),
+        "scanner output must name the Go-layout file: {combined}"
+    );
+    assert!(
+        !combined.contains("docs/design/arch.md"),
+        "scanner must not flag design documentation: {combined}"
     );
 }

@@ -138,16 +138,32 @@ a defect once found. A reviewer is responsible for bringing submitted work to an
 
 ## Release closure
 
-1. every plan is accepted and integrated into `dev`;
-2. run a full `mine-sync` against the complete `dev` tree;
-3. resolve all blocking uncertainty and update durable design;
-4. run product, release, and actual client-discovery verification;
-5. determine the next MINE code-repository version from accepted changes and current managed version;
-6. safely purge the MINE-owned `docs/plan/` workspace;
-7. verify no tracked or untracked release-bound plan workspace or design backup enters the stable tree;
-8. integrate the final tree through squash or curated commits so temporary plan history is not imported;
-9. tag/publish when configured;
-10. delete local managed `plan/*` and `dev` branches.
+Release closure has two distinct phases owned by different actors:
+
+### Phase A - final design reconciliation (repository owner)
+
+After the last plan is accepted and integrated into `dev`, the repository owner explicitly invokes a full-repository `mine-sync`:
+
+```text
+mine-sync prepare this repository for stable release
+```
+
+This reconciles accepted implementation into `docs/design/`, resolves or reports every incomplete area, and validates the complete repository. It is a separate, deliberate session; the review agent does not perform it automatically.
+
+### Phase B - mechanical release closure (mine-plan-review)
+
+After the final sync, the reviewer who accepted the final plan - or the repository owner invoking `mine-plan-review` against the completed graph - carries the mechanical release to local closure in the same session:
+
+1. confirm every plan is accepted and integrated into `dev` and the final `mine-sync` has completed;
+2. run product, release, and actual client-discovery verification (`mine release --format json` preflight plus the repository's own decisive gates discovered from `AGENTS.md`, the architecture, and the plan);
+3. determine the next MINE code-repository version from accepted changes and current managed version;
+4. safely purge the MINE-owned `docs/plan/` workspace;
+5. verify no tracked or untracked release-bound plan workspace or design backup enters the stable tree;
+6. integrate the final tree through squash or curated commits so temporary plan history is not imported;
+7. tag when configured;
+8. delete local managed `plan/*` and `dev` branches.
+
+The reviewer never pushes, creates a remote release, publishes a package, force-updates history, or deletes a remote or unrelated/user branch. Remote publication remains explicitly outside MINE's authority unless the user separately requests it.
 
 ## Why squash or curated integration
 

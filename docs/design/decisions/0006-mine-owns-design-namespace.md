@@ -16,8 +16,8 @@ MINE depends on predictable indexes, markers, links, document contracts, backup 
 
 ## Consequences
 
-- users onboarding old repositories must rename or remove legacy content;
-- `mine init` refuses namespace conflicts;
+- users onboarding old repositories get their legacy `docs/design/` auto-backed-up to a timestamped `docs/design-backup-<UTC timestamp>/` by `mine init`;
+- `mine init` resolves namespace conflicts deterministically (backup + fresh root); `mine-sync` refuses an unmarked tree only before `mine init` has claimed it;
 - foreign repository markers are rejected;
 - user guide and README prominently warn about ownership;
 - unsupported migration belongs in an external tool or fork.

@@ -341,6 +341,7 @@ pub enum VersionCmd {
     /// Set the repository version.
     Set {
         /// The version to set.
+        #[arg(long, value_name = "VERSION")]
         version: String,
     },
 }

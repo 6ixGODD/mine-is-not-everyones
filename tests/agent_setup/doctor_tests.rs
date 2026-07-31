@@ -64,7 +64,9 @@ fn doctor_detects_stale_version() {
     dispatch_agent(&repo, tmp.path(), &["agent", "install", "opencode"]);
     let p = tmp.path().join(".mine/agent-installs.json");
     let raw = std::fs::read_to_string(&p).unwrap();
-    let stale = raw.replace("\"mine_version\":\"0.1.0\"", "\"mine_version\":\"0.0.0\"");
+    let current_ver = env!("CARGO_PKG_VERSION");
+    let needle = format!(r#""mine_version":"{current_ver}""#);
+    let stale = raw.replace(&needle, r#""mine_version":"0.0.0""#);
     std::fs::write(&p, stale).unwrap();
     let env = dispatch_doctor(&repo, tmp.path(), "opencode");
     let d = &env["data"]["agents"]["diagnostics"][0];

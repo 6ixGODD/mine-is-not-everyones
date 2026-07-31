@@ -105,11 +105,13 @@ It:
 It:
 
 - independently inspects design, plan, commits, code, tests, and runtime behavior;
+- discovers the decisive validation suite from the repository under review, in this authority order: explicit current user instructions; repository governance (`AGENTS.md`); accepted Design and release contracts; the active Plan and its acceptance criteria; detected project build, test, lint, packaging, and integration systems - it never presumes Cargo, Python, Node, Go, or any other toolchain;
 - accepts or rejects through MINE;
 - may apply only unambiguous local fixes under strict rules;
 - before final stable integration, runs the tracked-implementation stale-plan-reference scan, rewrites historical comments as durable contracts, and records narrowly scoped fixture exemptions;
 - creates compensation plans for material failures;
 - merges an accepted plan branch into `dev` and deletes the accepted local branch when integration checks pass;
+- carries mechanical release closure (candidate construction, stable integration, branch cleanup) only after the repository owner has run the final `mine-sync`; it does not itself invoke `mine-sync`;
 - does not preserve rejected behavior with compatibility shims by default.
 
 ## Contract synchronization

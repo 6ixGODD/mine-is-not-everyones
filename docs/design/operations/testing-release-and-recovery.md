@@ -72,7 +72,7 @@ Tests include:
 
 - bad sync: restore selected or full design from the timestamped local backup, then rerun with narrower scope or corrected instructions;
 - backup failure: do not mutate design;
-- namespace conflict: rename/remove legacy directory, then rerun init;
+- namespace conflict: `mine init` auto-backs-up the legacy `docs/design/` to a timestamped backup and creates a fresh root; rerun `mine-sync` afterward;
 - revision conflict: reload and re-evaluate;
 - lock timeout: report evidence, never break blindly;
 - render failure: retain TOML and rerun render;

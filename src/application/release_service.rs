@@ -232,14 +232,12 @@ pub fn preview_cleanup(repo_root: &Path) -> MineResult<CleanupPreview> {
 /// when no prior release has been made; subsequent releases increment the
 /// patch component.
 fn resolve_release_version(_ws: &crate::domain::graph::PlanWorkspace) -> String {
-    // The managed version from config.toml is the authoritative source.
-    // For the first release, the version IS the current managed version (0.1.0).
-    // This is not hard-coded: it derives from the config's mine_code_version.
-    // The caller reads it from the config; the release service suggests the
-    // next version via repository.version.suggest.
-    // Here we return the current config version as the release candidate.
-    // The actual version SET happens via `mine repository version set`.
-    "0.1.0".to_string() // placeholder; the real source is config.toml
+    // The managed version from .mine/config.toml is the authoritative source.
+    // The release version is the current config mine_code_version, set via
+    // `mine repository version set --version <semver>` before release closure.
+    crate::cli::context::load_config(&std::env::current_dir().unwrap_or_default())
+        .map(|c| c.mine_code_version)
+        .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string())
 }
 
 fn validate_design(repo_root: &Path) -> bool {

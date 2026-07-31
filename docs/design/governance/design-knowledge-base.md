@@ -28,7 +28,7 @@ created_at = "<UTC timestamp>"
 - present directory without marker: fail with `MINE_DESIGN_NAMESPACE_CONFLICT`;
 - marker with another repository ID: fail with `MINE_DESIGN_OWNERSHIP_MISMATCH`.
 
-MINE does not automatically adopt or migrate arbitrary existing content. The user must rename or remove a conflicting directory.
+`mine init` does not adopt or migrate arbitrary existing content. When it encounters an unmarked `docs/design/`, it moves the legacy directory aside to a timestamped `docs/design-backup-<UTC timestamp>/` backup and creates a fresh managed root; it does not abort. `mine-sync` refuses an unmarked or foreign-owned `docs/design/` only after `mine init` has established the managed namespace. MINE never guesses whether old documents are authoritative, compatible, or safe to overwrite.
 
 ## Hierarchical indexing
 

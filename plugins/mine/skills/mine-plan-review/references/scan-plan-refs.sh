@@ -47,28 +47,19 @@ cd "$REPO_ROOT"
 PLAN_PATTERN='(^|[^[:alnum:]_])[Pp]lan[[:space:]-]*[0-9]'
 ALLOW_MARKER='mine-release-allow-plan-reference:'
 
-# The default is deliberately limited to shipped code, tests, automation, and
-# Skill/distribution assets. Historical plans/reports/design are documentation,
-# not stale implementation references; scanning them would make every release
-# fail by construction. A file literally named scan-plan-refs.sh is skipped by
-# basename, so the script can safely review its own host Skill directory
-# without its usage docs tripping the pattern it detects.
+# The default scans every tracked file except documentation and temporary
+# planning state, so it works for Go (cmd/, internal/, pkg/, *.go), Python
+# (*.py), TypeScript (src/, *.ts), monorepos, and any layout. A pathspec
+# argument still narrows the scan. Historical plans/reports/design are
+# documentation, not stale implementation references; scanning them would
+# make every release fail by construction. A file literally named
+# scan-plan-refs.sh is skipped by basename, so the script can safely review
+# its own host Skill directory without its usage docs tripping the pattern
+# it detects.
 if (($#)); then
     PATHS=("$@")
 else
-    PATHS=(
-        ':(glob)src/**'
-        ':(glob)tests/**'
-        ':(exclude)tests/fixtures/**'
-        ':(glob)scripts/**'
-        ':(glob).github/**'
-        ':(glob)skills/**'
-        ':(glob)plugins/**'
-        'Cargo.toml'
-        'Cargo.lock'
-        'package.json'
-        'AGENTS.md'
-    )
+    PATHS=(':(exclude)docs/design/**' ':(exclude)docs/design-backup-*/**' ':(exclude)docs/plan/**' ':(exclude)docs/README.md' ':(exclude)README.md' ':(exclude)README.zh-CN.md' ':(exclude)tests/fixtures/**' ':(exclude)**/testdata/**')
 fi
 
 findings=0
