@@ -175,7 +175,7 @@ jobs:
           "
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mine-checksums
           path: mine-sha256.txt
@@ -342,7 +342,7 @@ jobs:
           python -c "import hashlib; h=hashlib.sha256(open('$FILE','rb').read()).hexdigest(); open('$FILE'+'.sha256','w').write(h+'  '+'$FILE'+chr(10)); print(h, '$FILE')"
 
       - name: Upload release artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-artifact-${{ matrix.display }}
           path: |
