@@ -65,7 +65,7 @@ jobs:
         run: cargo test --all-targets --all-features
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.x"
 
@@ -131,7 +131,7 @@ jobs:
         run: cargo build --release --quiet
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.x"
 
@@ -238,7 +238,7 @@ jobs:
         run: cargo build --quiet
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.x"
 
@@ -302,7 +302,7 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.x"
 
