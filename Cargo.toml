@@ -35,7 +35,7 @@ toml_edit = "0.22"
 
 # Interactive installer TUI (mine setup) and lightweight HTTP for self-update /
 # release-asset download (sync, no async runtime overhead).
-crossterm = "0.28"
+crossterm = "0.29"
 ureq = { version = "3", features = ["json"] }
 clap = { version = "4", features = ["derive", "color", "help"] }
 
