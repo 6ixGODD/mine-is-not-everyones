@@ -1,6 +1,7 @@
 ---
 name: mine-plan-exec
 description: Execute one repository implementation plan end to end in the current working tree. Use when the user invokes the host-specific mine-plan-exec skill with a plan file, asks to implement a plan created by mine-plan-create, or wants a governed plan execution with dependency checks, code changes, verification, acceptance reporting, commits, and execution-graph updates. Execute in the workspace supplied by the user or scheduler. Never create or switch branches/worktrees yourself unless explicitly authorized.
+version: 0.1.6
 ---
 
 # MINE Plan Execute
