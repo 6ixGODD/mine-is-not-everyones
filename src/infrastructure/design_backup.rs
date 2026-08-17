@@ -114,8 +114,11 @@ impl<'a> DesignBackup<'a> {
     /// id. Marker must be MINE-managed and belong to this repository.
     fn validate_marker(&self, repo_root: &Path, config: &MineConfig) -> MineResult<DesignMarker> {
         let marker_path = repo_root.join(&config.design.marker);
-        // An existing design root without a marker is an unmanaged namespace;
-        // MINE refuses to adopt it (stable error, not an opaque I/O failure).
+        // An existing design root without a marker is an unmanaged namespace.
+        // `mine init` resolves this by backing it up and creating a managed
+        // root; this backup/validation path (used by mine-sync and design
+        // backup) refuses to operate on a tree `mine init` has not claimed
+        // (stable error, not an opaque I/O failure).
         let design_dir = marker_path
             .parent()
             .unwrap_or_else(|| Path::new("docs/design"));

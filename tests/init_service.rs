@@ -34,7 +34,7 @@ fn run_init(root: &Path) -> MineResult<InitOutcome> {
     let uuid = FixedUuid;
     let clock = FixedClock;
     let svc = mine::application::init_service::InitService::new(&uuid, &clock);
-    svc.initialize(root)
+    svc.initialize(root, "master")
 }
 
 fn marker_path(root: &Path) -> PathBuf {

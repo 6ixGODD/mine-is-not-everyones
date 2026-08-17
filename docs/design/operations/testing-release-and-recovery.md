@@ -57,15 +57,44 @@ Tests include:
 
 ## Release model
 
+### Generic repository release gates
+
+Every MINE-managed repository must pass these gates before local stable integration:
+
+1. valid MINE repository configuration (`.mine/config.toml`);
+2. valid Design (`mine design validate`);
+3. terminal Plan graph on development state (every Plan `ACCEPTED` or `REJECTED` with accepted compensation);
+4. accepted compensation chains for every rejected Plan;
+5. clean working tree;
+6. no pending MINE-owned transactions;
+7. stable candidate cleanliness: no `docs/plan/` or tracked `docs/design-backup-*` on the stable branch;
+8. configured stable/integration branch correctness (read from `config.branches`, not hardcoded); a configured stable branch that does not exist in git is a decisive, actionable failure (run `mine init` to repair a stale recorded branch), never a silent empty resolution;
+9. repository-defined decisive validation evidence (discovered from `AGENTS.md`, Design, and the Plan - never presuming a specific toolchain).
+
+The generic `mine release` preflight enforces these. It must **not** require `skills/`, `plugins/mine/skills/`, four-client installation, or MCP tool-count verification.
+
+### MINE source-repository additional gates
+
+The MINE source repository adds project-local gates enforced by `AGENTS.md` quality tables, CI, and MINE-local Design - not by the generic preflight:
+
+- root/generated Skill synchronization (`python scripts/sync-plugin-assets.py --check`);
+- embedded payload verification;
+- four-client installation smoke tests;
+- MCP discovery (exactly twelve tools);
+- bootstrap tests;
+- release artifact packaging and cross-platform CI.
+
+### Lifecycle
+
 1. develop on managed `dev` and `plan/*` branches;
 2. independently accept and integrate all plans;
-3. run full `mine-sync` against accepted code;
-4. validate design, product, and supported clients;
+3. run full `mine-sync` against accepted code (Phase A);
+4. `mine-plan-review complete release closure` performs mechanical closure (Phase B);
 5. determine next managed repository version;
 6. close and purge `docs/plan/`;
 7. verify no plan workspace or design backup enters stable release;
 8. integrate through squash or curated commits;
-9. tag and publish checksummed binaries;
+9. tag and publish checksummed binaries (MINE source repository only);
 10. delete local managed temporary branches.
 
 ## Recovery

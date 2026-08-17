@@ -15,6 +15,9 @@ All other commands are primarily invoked by Skills or advanced users.
 ## Command groups
 
 ```text
+mine setup
+mine update
+mine uninstall
 mine init
 mine status
 mine doctor
@@ -29,6 +32,28 @@ mine mcp serve
 ```
 
 Final names may change during implementation. Skills and documentation are regenerated from the actual stable contract before release.
+
+## Machine-level vs repository-level commands
+
+MINE has three distinct levels of operation; do not confuse them:
+
+- **Machine-level Agent integration**: `mine setup` installs Skills and MCP
+  configuration into coding-agent client directories (run once per machine;
+  rerun to add or remove integrations). `mine update` / `mine uninstall`
+  manage the installed binary and Agent integrations at machine level.
+- **Machine-level installation status**: `mine agent status` lists the managed
+  Agent installations and their health independent of any repository; it does
+  not require an initialized MINE repository.
+- **Repository-level initialization**: `mine init` creates `.mine/config.toml`,
+  the design namespace, and governance at a repository root (run once per
+  repository).
+- **Repository-aware diagnostics**: `mine doctor` / `mine doctor --agents all`
+  run inside an initialized repository and check `.mine/config.toml`, design
+  marker/index, execution graph, Git branch, and (with `--agents`) per-Agent
+  installation state. They are not machine-level commands.
+
+A fresh machine-level install is verified with `mine agent status`; `mine doctor`
+requires an initialized repository.
 
 ## `mine init`
 

@@ -74,6 +74,9 @@ pub fn init_report(outcome: &InitOutcome) -> Vec<HumanLine> {
                     crate::application::init_service::InitAction::CreatedSection(_) => {
                         "created-section"
                     }
+                    crate::application::init_service::InitAction::RepairedStableBranch {
+                        ..
+                    } => "repaired-stable-branch",
                     crate::application::init_service::InitAction::BackedUpDesign { .. } => {
                         unreachable!()
                     }
@@ -82,6 +85,10 @@ pub fn init_report(outcome: &InitOutcome) -> Vec<HumanLine> {
                     crate::application::init_service::InitAction::Created(p)
                     | crate::application::init_service::InitAction::Preserved(p)
                     | crate::application::init_service::InitAction::CreatedSection(p) => p,
+                    crate::application::init_service::InitAction::RepairedStableBranch {
+                        path,
+                        ..
+                    } => path,
                     crate::application::init_service::InitAction::BackedUpDesign { .. } => {
                         unreachable!()
                     }

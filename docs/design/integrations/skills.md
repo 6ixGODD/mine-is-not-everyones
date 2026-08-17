@@ -108,10 +108,11 @@ It:
 - discovers the decisive validation suite from the repository under review, in this authority order: explicit current user instructions; repository governance (`AGENTS.md`); accepted Design and release contracts; the active Plan and its acceptance criteria; detected project build, test, lint, packaging, and integration systems - it never presumes Cargo, Python, Node, Go, or any other toolchain;
 - accepts or rejects through MINE;
 - may apply only unambiguous local fixes under strict rules;
-- before final stable integration, runs the tracked-implementation stale-plan-reference scan, rewrites historical comments as durable contracts, and records narrowly scoped fixture exemptions;
+- before final stable integration, runs the tracked-implementation stale-plan-reference scan (resolved from the installed Skill directory, not the target repository), rewrites historical comments as durable contracts, and records narrowly scoped fixture exemptions;
 - creates compensation plans for material failures;
 - merges an accepted plan branch into `dev` and deletes the accepted local branch when integration checks pass;
-- carries mechanical release closure (candidate construction, stable integration, branch cleanup) only after the repository owner has run the final `mine-sync`; it does not itself invoke `mine-sync`;
+- carries mechanical release closure via the explicit `mine-plan-review complete release closure` invocation after the repository owner has run the final `mine-sync` (Phase A); it does not itself invoke `mine-sync`;
+- requires only generic release gates (design, graph, terminal state, clean tree, candidate cleanliness); it does not require MINE plugin distribution, four-client installation, or MCP tool-count verification unless reviewing the MINE source repository itself;
 - does not preserve rejected behavior with compatibility shims by default.
 
 ## Contract synchronization

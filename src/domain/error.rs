@@ -18,7 +18,10 @@ pub enum MineError {
     RepositoryNotFound { detail: String },
 
     /// `docs/design/` exists but is not MINE-managed (no marker, or a foreign
-    /// marker). MINE refuses to adopt or migrate legacy content.
+    /// marker). `mine init` resolves this deterministically by moving the
+    /// legacy directory aside to a timestamped backup and creating a fresh
+    /// managed root; other operations (e.g. `mine-sync`) report this error to
+    /// refuse operating on a tree `mine init` has not claimed.
     #[error("design namespace conflict at {path}: existing docs/design is not MINE-managed")]
     DesignNamespaceConflict { path: PathBuf },
 

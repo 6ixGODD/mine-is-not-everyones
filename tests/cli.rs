@@ -619,3 +619,198 @@ fn json_envelope_has_stable_sorted_keys() {
     // first, so a stable serializer emits it as the first object key.
     assert!(body.starts_with(r#"{"command":"#));
 }
+
+// ---------------------------------------------------------------------------
+// Generic release portability and branch handling regression tests.
+// ---------------------------------------------------------------------------
+
+/// Initializes a git repo whose default branch is `branch_name`.
+fn init_git_repo_with_branch(root: &std::path::Path, branch_name: &str) {
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["init", "--quiet", "-b", branch_name])
+        .status()
+        .unwrap();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["config", "user.email", "t@t"])
+        .status()
+        .unwrap();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["config", "user.name", "t"])
+        .status()
+        .unwrap();
+    std::fs::write(root.join("README.md"), "x\n").unwrap();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["add", "README.md"])
+        .status()
+        .unwrap();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["commit", "--quiet", "-m", "init"])
+        .status()
+        .unwrap();
+}
+
+#[test]
+fn init_persists_detected_main_branch() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_git_repo_with_branch(tmp.path(), "main");
+    let outcome = cli::dispatch(
+        &run(tmp.path().to_str().unwrap(), &["init", "--format", "json"]),
+        "mine",
+    );
+    assert_eq!(
+        outcome.exit_code,
+        0,
+        "init must succeed: {}",
+        envelope_json(&outcome)
+    );
+    let env = envelope_json(&outcome);
+    assert_eq!(
+        env["data"]["stable_branch"], "main",
+        "init JSON must report detected main branch"
+    );
+    // The persisted config must record main, not master.
+    let config_path = tmp.path().join(".mine/config.toml");
+    let config_text = std::fs::read_to_string(&config_path).unwrap();
+    assert!(
+        config_text.contains("stable = \"main\""),
+        "config must persist main: {config_text}"
+    );
+    assert!(
+        !config_text.contains("stable = \"master\""),
+        "config must not hardcode master: {config_text}"
+    );
+}
+
+#[test]
+fn init_persists_master_when_default_branch_is_master() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_git_repo_with_branch(tmp.path(), "master");
+    let outcome = cli::dispatch(
+        &run(tmp.path().to_str().unwrap(), &["init", "--format", "json"]),
+        "mine",
+    );
+    assert_eq!(
+        outcome.exit_code,
+        0,
+        "init must succeed: {}",
+        envelope_json(&outcome)
+    );
+    let config_path = tmp.path().join(".mine/config.toml");
+    let config_text = std::fs::read_to_string(&config_path).unwrap();
+    assert!(
+        config_text.contains("stable = \"master\""),
+        "config must persist master: {config_text}"
+    );
+}
+
+#[test]
+fn init_persists_explicit_custom_stable_branch() {
+    let tmp = tempfile::tempdir().unwrap();
+    init_git_repo_with_branch(tmp.path(), "trunk");
+    let outcome = cli::dispatch(
+        &run(tmp.path().to_str().unwrap(), &["init", "--format", "json"]),
+        "mine",
+    );
+    assert_eq!(
+        outcome.exit_code,
+        0,
+        "init must succeed: {}",
+        envelope_json(&outcome)
+    );
+    let env = envelope_json(&outcome);
+    assert_eq!(
+        env["data"]["stable_branch"], "trunk",
+        "custom branch must be reported"
+    );
+    let config_path = tmp.path().join(".mine/config.toml");
+    let config_text = std::fs::read_to_string(&config_path).unwrap();
+    assert!(
+        config_text.contains("stable = \"trunk\""),
+        "config must persist trunk: {config_text}"
+    );
+}
+
+#[test]
+fn external_repo_without_skills_passes_distribution_gate() {
+    // A minimal non-MINE repository: git repo, no skills/, no plugins/.
+    let tmp = tempfile::tempdir().unwrap();
+    init_git_repo(tmp.path());
+    // Initialize MINE so config + design exist.
+    let outcome = cli::dispatch(
+        &run(tmp.path().to_str().unwrap(), &["init", "--format", "json"]),
+        "mine",
+    );
+    assert_eq!(
+        outcome.exit_code,
+        0,
+        "init must succeed: {}",
+        envelope_json(&outcome)
+    );
+    // Open the workspace on the integration branch so the stable branch stays
+    // clean (mirroring the real MINE flow) and a terminal graph exists.
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(tmp.path())
+        .args(["checkout", "--quiet", "-b", "dev"])
+        .status()
+        .unwrap();
+    let outcome = cli::dispatch(
+        &run(
+            tmp.path().to_str().unwrap(),
+            &["workspace", "open", "--format", "json"],
+        ),
+        "mine",
+    );
+    assert_eq!(
+        outcome.exit_code,
+        0,
+        "workspace open must succeed: {}",
+        envelope_json(&outcome)
+    );
+    // Commit so the tree is clean, then run the full preflight.
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(tmp.path())
+        .args(["add", "-A"])
+        .status()
+        .unwrap();
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(tmp.path())
+        .args(["commit", "--quiet", "-m", "workspace"])
+        .status()
+        .unwrap();
+    let outcome = cli::dispatch(
+        &run(
+            tmp.path().to_str().unwrap(),
+            &["release", "--format", "json"],
+        ),
+        "mine",
+    );
+    let env = envelope_json(&outcome);
+    assert_eq!(
+        outcome.exit_code, 0,
+        "release preflight must succeed: {}",
+        env
+    );
+    assert_eq!(
+        env["data"]["distribution_synced"], true,
+        "no skills/ means parity is vacuously true: {}",
+        env
+    );
+    assert_eq!(
+        env["data"]["can_release"], true,
+        "generic repo without MINE assets must be releasable: {}",
+        env
+    );
+}

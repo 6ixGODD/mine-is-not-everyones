@@ -58,7 +58,9 @@ impl MineConfig {
 /// Managed branch configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BranchesConfig {
-    /// Stable branch detected by `mine init` (`master` for this repository).
+    /// Stable branch detected and persisted by `mine init` (e.g. `main`,
+    /// `master`, or a custom configured branch). All downstream services read
+    /// this value rather than a hardcoded default.
     pub stable: String,
     /// Temporary integration branch.
     pub integration: String,

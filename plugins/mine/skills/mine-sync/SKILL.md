@@ -77,7 +77,7 @@ Exactly this order. Do not skip or reorder.
 ### 1. Validate repository, branch, marker, and working-tree conditions
 
 - Confirm the repository root and that a MINE-managed tree exists: `docs/design/.mine-design.toml` must parse, its `managed_by` is `MINE`, and its `repository_id` matches the configured repository identity.
-- Refuse **legacy unmarked `docs/design/`**: if `docs/design/` exists but `.mine-design.toml` is absent, stop. This is a namespace conflict (ADR-0006). Do not guess whether old documents are authoritative, compatible, or safe to overwrite. The user must rename or remove the legacy directory. Warn the user explicitly.
+- Refuse **legacy unmarked `docs/design/`**: if `docs/design/` exists but `.mine-design.toml` is absent, stop. This is a namespace conflict (ADR-0006). Do not guess whether old documents are authoritative, compatible, or safe to overwrite. The deterministic resolution is `mine init`, which auto-backs-up the legacy directory to `docs/design-backup-<UTC timestamp>/` and creates a fresh managed root; after that, sync may proceed. The user is never told to move or delete the legacy directory by hand. Warn the user explicitly.
 - Reject a marker belonging to another repository (`MINE_DESIGN_OWNERSHIP_MISMATCH`) or a malformed marker (`MINE_DESIGN_MARKER_INVALID`).
 - Record the current branch and HEAD commit (read-only Git evidence; no mutation).
 - A non-clean working tree does not block a read+design-write sync, but report it; never stage or commit to "clean up".

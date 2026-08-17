@@ -6,7 +6,7 @@ Pick the entry point for your goal:
 
 - **[Using MINE](user-guide.md)** — install, initialize, run the workflow day to day.
 - **[Design index](design/index.md)** — understand or develop MINE itself; the durable architecture source of truth.
-- **[Installation & lifecycle](user-guide.md#installation)** — `mine setup`, `mine update`, `mine uninstall`, `mine --version`.
+- **[Installation & lifecycle](user-guide.md#installation-and-lifecycle)** — `mine setup`, `mine update`, `mine uninstall`, `mine --version`.
 - **[Release & governance](design/governance/branch-and-plan-lifecycle.md)** — branch roles, plan lifecycle, and release closure.
 
 MINE documentation has two deliberately different lifecycles.

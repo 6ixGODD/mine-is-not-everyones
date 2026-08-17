@@ -51,15 +51,27 @@ the fallback explicitly.
 
 ## Resolve the review target
 
+### Plan-review mode (default)
+
 Treat the invocation argument as exactly one immutable plan path:
 
 ```text
 mine-plan-review docs/plan/02-card-and-observation-encoding.md
-mine-plan-review docs/plan/02-card-and-observation-encoding.md
 ```
 
-Strip only the invocation-level `@`, resolve from repository root, and require the file to exist. Do not silently review another plan. If no
-path is supplied, ask for it before mutation.
+Strip only the invocation-level `@`, resolve from repository root, and require the file to exist. Do not silently review another plan. If no path is supplied, ask for it before mutation.
+
+### Release-closure mode
+
+When the repository owner has completed the final `mine-sync` (Phase A) and every Plan is terminal, invoke the Skill in release-closure mode:
+
+```text
+mine-plan-review complete release closure
+```
+
+**Entry discrimination (executable):** if the invocation argument is exactly `complete release closure`, enter release-closure mode; never resolve that literal as a plan file path. Any other single argument is treated as a Plan path (Plan-review mode). If no argument is supplied in Plan-review mode, ask for a path before mutation.
+
+This mode does **not** require a Plan path and does **not** re-review or re-accept any Plan. It detects the all-terminal graph, verifies the final sync completed, and carries the mechanical closure steps below. It may also be used when the final Plan was already accepted in an earlier session.
 
 ## Read the governing evidence
 
@@ -128,13 +140,31 @@ At minimum:
 
 ### Remove temporary-plan references before release closure
 
-Before the final stable-candidate integration, run the scanner bundled with this Skill from the root of the repository under review:
+Before the final stable-candidate integration, run the scanner bundled with this Skill against the repository under review:
 
 ```text
-bash references/scan-plan-refs.sh --check
+bash <installed Skill dir>/mine-plan-review/references/scan-plan-refs.sh --check
 ```
 
-The scanner lives next to this `SKILL.md` under `references/scan-plan-refs.sh` and is copied into every installer-managed Skill directory (Claude Code, Codex, Pi, OpenCode). It must never be invoked as `scripts/scan-plan-refs.sh` — that path does not exist in the repository being reviewed and would be a dangling reference. Run it with an absolute path if the agent cannot resolve the relative one, for example `bash ~/.claude/skills/mine-plan-review/references/scan-plan-refs.sh --check`.
+The scanner lives next to this `SKILL.md` under `references/scan-plan-refs.sh` and is copied into every installer-managed Skill directory (Claude Code, Codex, Pi, OpenCode). **Resolve it from the Skill directory that actually loaded this SKILL.md** — never from a relative path inside the target repository (the target repository does not ship `references/scan-plan-refs.sh`).
+
+**Resolution contract (executable):**
+
+1. Determine the absolute path of the `mine-plan-review/SKILL.md` file that is actually loaded for this session (the runtime that invoked this Skill knows the file it loaded; if the runtime exposes it, use that path directly).
+2. Take its parent directory as the Skill directory.
+3. Join: `<loaded-skill-directory>/references/scan-plan-refs.sh`.
+4. Run the scanner with the **target repository root as the current working directory** (the scanner internally resolves the target's Git toplevel, so it works from any subdirectory).
+
+The per-client locations below are typical install layouts for troubleshooting when the runtime does not expose the loaded path — they are NOT a substitute for the loaded-path derivation, and a custom `--config-root` (or any other install location) overrides them:
+
+- Claude Code: `~/.claude/skills/mine-plan-review/references/scan-plan-refs.sh`
+- Codex: `~/.agents/skills/mine-plan-review/references/scan-plan-refs.sh`
+- Pi: `~/.pi/agent/skills/mine-plan-review/references/scan-plan-refs.sh`
+- OpenCode: `~/.config/opencode/skills/mine-plan-review/references/scan-plan-refs.sh`
+
+**Fallback (stdin):** if the scanner file cannot be located from the loaded Skill directory or any typical layout, run the scanner's bundled source via stdin rather than guessing a path: the agent has this Skill's bundled `references/scan-plan-refs.sh` content available from the Skill package; pipe it to `bash` with the target repository as the working directory, e.g. `bash -s -- --check < <(cat "$SKILL_DIR/references/scan-plan-refs.sh")` (quoting per the host shell). The target repository never needs a local `references/` directory.
+
+The scanner is layout-agnostic: it scans all tracked files excluding `docs/design/`, `docs/plan/`, design backups, READMEs, and fixture/testdata directories, so it works for Go, Python, TypeScript, monorepo, and any other layout.
 
 This scans tracked implementation, test, workflow, Skill, and distribution assets while excluding temporary `docs/plan/` and design documentation. It rejects stale `Plan NN` references because stable behavior must be intelligible without the ephemeral planning history. Rewrite a historical comment as an enduring contract; for example:
 
@@ -199,7 +229,23 @@ Then:
 
 ## Bring release closure to completion
 
-When the accepted plan graph reaches (or, after this acceptance, will reach) an all-terminal state (`docs/design/governance/branch-and-plan-lifecycle.md` -> "Release closure"; every plan `ACCEPTED` or `REJECTED` with an accepted compensation chain), the reviewer who performs the final acceptance is also responsible for carrying the mechanical release to local closure in the same session, not for spawning another plan merely to perform the remaining mechanical steps. Release closure is two phases: the repository owner runs the final `mine-sync` (Phase A); the reviewer performs mechanical closure (Phase B). The reviewer confirms the final sync has completed but does **not** invoke `mine-sync` itself.
+Release closure is two phases. Phase A: the repository owner runs the final `mine-sync prepare this repository for stable release` (the reviewer does **not** invoke `mine-sync`). Phase B: the mechanical closure below, carried out by the reviewer - either continuing from a final acceptance, or in a fresh session via the explicit `mine-plan-review complete release closure` invocation.
+
+### Entering release-closure mode
+
+Release-closure mode is distinct from Plan-review mode:
+
+- **No Plan path is required.** Do not require a Plan that is still `IMPLEMENTED`; the final Plan may already be `ACCEPTED` in an earlier session.
+- **Enter only when** `mine graph status --format json` reports every Plan terminal (`ACCEPTED` or `REJECTED` with accepted compensation).
+- **Never re-accept.** An already-`ACCEPTED` Plan must not be transitioned again; closure does not call `mine plan accept` unless a genuine new `IMPLEMENTED` plan is being reviewed.
+
+**Freshness verification (Phase A evidence, mandatory and reproducible).** A terminal graph plus a structurally valid Design is NOT sufficient proof that the final `mine-sync` ran after the last Plan was accepted and integrated, or that Design matches the current `dev` implementation. Before any closure step, verify Phase A completion with explicit, independently checkable evidence — never rely on `mine design validate` alone as a semantic sync proof:
+
+1. **Sync report exists and covers the final state.** Locate the most recent mine-sync report under the target repository's `.mine/runtime/sync/` (written by Phase A per `docs/design/governance/design-sync.md`). It must record the repository, the branch it reconciled, the commit inspected, and a status of `SYNCHRONIZED` (or `SYNCHRONIZED_WITH_WARNINGS` with no blocking uncertainty). If no report exists, or its recorded commit predates the final accepted plan's integration commit, the final sync is **missing or stale**: report the gap explicitly and do **not** proceed.
+2. **Design reconciles the final accepted plan's contracts.** Take the last-accepted Plan (or the full set of plans accepted since the recorded sync commit). For each, verify that the Design leaves referenced by its `design_references` describe the post-implementation behavior — not the pre-implementation description. Concretely: read the plan's implementation diff (its recorded `implementation_commits`), read each referenced Design leaf, and confirm the leaf reflects the implemented contracts, schemas, and behavior. If any referenced leaf still describes the pre-change behavior, the Design is stale: report the gap and do **not** proceed.
+3. **Independent consistency spot-check.** For at least the final Plan's changed surface (files, CLI contracts, schemas, behavior touched by its implementation commits), independently re-derive from the current `dev` code that the Design describes what the code does. A leaf that validates structurally but contradicts the code (e.g., still documents the old flag, old default, or old schema) is stale regardless of `mine design validate`.
+
+Record the freshness evidence (sync report path + recorded commit, final Plan id, referenced leaves checked, spot-check observations) in the closure report. If the graph reports non-terminal state, the sync report is absent or pre-integration, or any freshness check fails, the final `mine-sync` is missing or stale: report the gap explicitly and do **not** proceed to closure.
 
 ### Discover the decisive validation suite
 
@@ -215,12 +261,12 @@ Never invent Cargo, Python, Node, Go, or any other toolchain command. Commands v
 
 ### Mechanical closure steps
 
-1. Confirm the repository owner has run the final `mine-sync prepare this repository for stable release` against the complete `dev` tree (Phase A). The reviewer does not run `mine-sync`.
-2. Merge the just-accepted branch into `dev` with `--no-ff` and re-run the decisive validation suite discovered above directly on `dev`, plus `mine design validate --format json` and `mine graph validate --format json`.
-3. Call `mine release --format json` (CLI-only; no MCP tool exposes release preflight) as a diagnostic before candidate construction. Its development-tree gates are decisive immediately: terminal plan state, accepted compensation for every rejected plan, valid graph/render, valid design, synchronized distribution assets, no dirty tree, no pending Agent transaction, and the authoritative resolved version from `.mine/config.toml`. Before stable integration, `can_release:false` is expected solely when the existing stable branch still contains its old `docs/plan/` workspace; do not misreport that pre-integration stable-tree fact as a failed `dev` validation. After curated stable integration, run the preflight again from `dev` and require every gate, including no `docs/plan/` or `docs/design-backup-*` on the stable branch, to pass. `mine release` is validation-only; it must never itself claim that `master`, tags, publication, or cleanup occurred.
+1. Confirm the repository owner has run the final `mine-sync prepare this repository for stable release` against the complete `dev` tree (Phase A), per the freshness verification in "Entering release-closure mode" above (sync report with recorded post-integration commit + referenced Design leaves reconciled + independent consistency spot-check). The reviewer does not run `mine-sync`.
+2. Merge the accepted plan branches into `dev` with `--no-ff` (only branches not yet integrated) and re-run the decisive validation suite discovered above directly on `dev`, plus `mine design validate --format json` and `mine graph validate --format json`.
+3. Call `mine release --format json` (CLI-only; no MCP tool exposes release preflight) as a diagnostic before candidate construction. Its development-tree gates are decisive immediately: terminal plan state, accepted compensation for every rejected plan, valid graph/render, valid design, no dirty tree, no pending Agent transaction, and the authoritative resolved version from `.mine/config.toml`. Before stable integration, `can_release:false` is expected solely when the existing stable branch still contains its old `docs/plan/` workspace; do not misreport that pre-integration stable-tree fact as a failed `dev` validation. After curated stable integration, run the preflight again from `dev` and require every gate, including no `docs/plan/` or `docs/design-backup-*` on the stable branch, to pass. `mine release` is validation-only; it must never itself claim that `master`, tags, publication, or cleanup occurred.
 4. If `mine release` (or any other decisive check) fails on a narrow, release-scoped defect - not a new design decision - fix it directly in this same session exactly as in "Fix directly during review" above (own commit, own regression coverage, full revalidation), rather than opening a compensating plan solely to perform the closure.
-5. Run the bundled `references/scan-plan-refs.sh --check` from the root of the repository under review (never `scripts/scan-plan-refs.sh` - that path does not exist in the target repository), correct every unexempted temporary-plan reference, and record every line-local fixture exemption before candidate construction.
-6. In an isolated clone or Git worktree (never the reviewer's own live checkout), construct the exact stable candidate tree per `docs/design/governance/branch-and-plan-lifecycle.md` and `docs/design/integrations/distribution.md`: the accepted `dev` tree with the ephemeral `docs/plan/` workspace removed and no tracked `docs/design-backup-*` path. Run the repository's decisive validation plus `mine design validate` and distribution verification against the candidate; do **not** run `mine graph validate` there because the graph-less stable tree intentionally has no `docs/plan/` workspace. Graph/render validation is instead a decisive gate on `dev` before candidate construction. Install all four Agents (`claude-code`, `codex`, `pi`, `opencode`) into an explicit isolated `--config-root`, confirm `mine doctor --agents all` reports every Agent healthy on this graph-less stable candidate (a positively-identified stable branch legitimately has no `docs/plan/`; this must not be confused with an unhealthy development repository), and confirm `mine mcp serve` exposes exactly the twelve accepted MCP tools.
+5. Run the bundled scanner from this Skill's installed directory (see "Remove temporary-plan references before release closure"), with the target repository as the working directory. Correct every unexempted temporary-plan reference and record every line-local fixture exemption before candidate construction. Never require the target repository to contain `references/scan-plan-refs.sh`.
+6. In an isolated clone or Git worktree (never the reviewer's own live checkout), construct the exact stable candidate tree per `docs/design/governance/branch-and-plan-lifecycle.md`: the accepted `dev` tree with the ephemeral `docs/plan/` workspace removed and no tracked `docs/design-backup-*` path. Run the repository's decisive validation plus `mine design validate` against the candidate; do **not** run `mine graph validate` there because the graph-less stable tree intentionally has no `docs/plan/` workspace. Graph/render validation is instead a decisive gate on `dev` before candidate construction. Candidate cleanliness is verified by `mine release`'s stable-tree gates; MINE product-distribution checks (four-agent installation, `mine doctor --agents all`, MCP tool-count assertions, bootstrap smoke tests) apply **only** when the repository under review is the MINE source repository itself, per MINE-local governance - never as a universal requirement.
 7. Only after every candidate check passes, perform the Design-authorized local stable-branch integration (squash or curated commit so temporary plan history is not imported into the stable branch - never a plain merge of `dev`), determine and record the resolved release version from `.mine/config.toml`, and perform only the MINE-owned local cleanup the Design authorizes: delete local `plan/*` branches that are merged/accepted (never a branch with unexpected ancestry, an unmerged branch, or a checked-out worktree), and delete the local `dev` branch only after stable integration succeeds.
 8. Never push, create a remote release, publish a package, force-update history, or delete a remote or unrelated/user branch. Report the exact final local stable-branch commit, the resolved version, the final stable-tree contents, and every local branch or artifact removed.
 

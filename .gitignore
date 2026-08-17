@@ -13,3 +13,5 @@ __pycache__/
 Thumbs.db
 
 # Local MINE runtime and locks are ignored via .mine/.gitignore
+# JetBrains IDE local state
+.idea/

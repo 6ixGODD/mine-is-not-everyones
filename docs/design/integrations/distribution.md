@@ -1,5 +1,19 @@
 # Distribution and Installation
 
+## Repository roles
+
+MINE operates in two repository roles with different release gates:
+
+### A. Generic MINE-managed repository
+
+A user repository whose product is unrelated to MINE. It contains its own source code, Design, Plans during development, product-specific quality gates, and release candidate. It does **not** need to ship or verify MINE's plugin distribution assets, Skills, or bootstrap installers.
+
+### B. MINE source repository
+
+The repository that develops and distributes the MINE executable, root Skills, generated plugin copies, bootstrap installers, release assets, and MCP implementation. It has additional project-local release gates: root/generated Skill synchronization, embedded payload verification, Agent installation smoke tests, MCP discovery tests, bootstrap tests, and release artifact packaging.
+
+These extra gates belong to MINE-local Design and governance (`AGENTS.md`, CI), not to portable Skills or generic release preflight. The generic `mine release` preflight must not require `skills/` or `plugins/mine/skills/` to exist; a repository without them is a valid generic repository, not a failed distribution.
+
 ## Source-of-truth rule
 
 Repository-root `skills/` is the only hand-edited Skill source. Claude/Codex plugin directories and embedded binary payloads are generated or synchronized artifacts.

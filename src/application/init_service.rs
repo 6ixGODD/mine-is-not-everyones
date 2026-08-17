@@ -8,7 +8,7 @@
 //! - create a repository UUID when unmanaged, preserving existing managed
 //!   values;
 //! - create the `docs/design/` scaffold and `.mine-design.toml` when absent;
-//! - refuse unmarked or foreign-owned existing `docs/design/`;
+//! - auto-back-up an unmarked or foreign-owned existing `docs/design/`;
 //! - create the MINE section in `AGENTS.md` without erasing unrelated content;
 //! - initialize the repository version from existing MINE state, reliable root
 //!   version evidence, or `0.1.0`.
@@ -33,9 +33,8 @@ use crate::domain::design_marker::{
 use crate::domain::error::{MineError, MineResult};
 use crate::domain::ports::{Clock, UuidSource};
 use crate::domain::repository_identity::{RepositoryIdentity, root_version_from_cargo_manifest};
+use crate::infrastructure::git;
 
-/// Default managed stable branch for this repository.
-const DEFAULT_STABLE_BRANCH: &str = "master";
 /// Default managed integration branch.
 const DEFAULT_INTEGRATION_BRANCH: &str = "dev";
 
@@ -84,6 +83,13 @@ pub enum InitAction {
     /// A non-MINE docs/design/ was moved to a timestamped backup before
     /// creating a fresh MINE-managed design root.
     BackedUpDesign { backup_path: PathBuf },
+    /// A stale `branches.stable` recorded by an older MINE version was
+    /// repaired to the actually detected stable branch.
+    RepairedStableBranch {
+        path: PathBuf,
+        from: String,
+        to: String,
+    },
 }
 
 /// The structured outcome of `mine init`.
@@ -119,16 +125,19 @@ impl<'a> InitService<'a> {
 
     /// Runs setup-only initialization at `repo_root`.
     ///
+    /// `stable_branch` is the detected stable branch (e.g. `main`, `master`,
+    /// or a custom configured branch). It is persisted into
+    /// `.mine/config.toml` under `[branches].stable` so all downstream
+    /// services read the actual branch rather than a hardcoded default.
+    ///
     /// # Errors
-    /// - [`MineError::DesignNamespaceConflict`] for unmarked or foreign-owned
-    ///   `docs/design/`.
     /// - [`MineError::DesignOwnershipMismatch`] for a marker belonging to
     ///   another repository.
     /// - [`MineError::DesignMarkerInvalid`] for a malformed marker.
     /// - [`MineError::ConfigInvalid`] for an unparseable or incomplete existing
     ///   `.mine/config.toml`.
     /// - [`MineError::Io`] for filesystem failures.
-    pub fn initialize(&self, repo_root: &Path) -> MineResult<InitOutcome> {
+    pub fn initialize(&self, repo_root: &Path, stable_branch: &str) -> MineResult<InitOutcome> {
         let mine_dir = repo_root.join(".mine");
         let config_path = mine_dir.join("config.toml");
         let design_dir = repo_root.join("docs").join("design");
@@ -213,11 +222,44 @@ impl<'a> InitService<'a> {
             // The existing configuration was already parsed by
             // `read_existing_identity`; reaching here means it is valid. The
             // resolved identity preserves its recorded values, so no rewrite is
-            // needed.
-            actions.push(InitAction::Preserved(config_path.clone()));
+            // needed -- EXCEPT for a stale `branches.stable` recorded by an
+            // older MINE version (e.g. `master`) that does not exist in this
+            // repository while a different branch is detected. Silently
+            // preserving that value would make doctor/workspace/release
+            // consume a wrong branch forever. Repair it explicitly and record
+            // the action; never guess when the recorded branch exists.
+            let existing_config = read_existing_config(&config_path)?;
+            let recorded_stable = existing_config.as_ref().map(|c| c.branches.stable.clone());
+            let stale = match (&recorded_stable, stable_branch) {
+                (Some(recorded), detected) if recorded != detected => {
+                    // Only repair when the recorded branch provably does not
+                    // exist in git. If it exists (even if we are on another
+                    // branch right now), it may be intentional and is kept.
+                    let recorded_exists = git::branch_exists(repo_root, recorded);
+                    let detected_exists = git::branch_exists(repo_root, detected);
+                    !recorded_exists && detected_exists
+                }
+                _ => false,
+            };
+            if stale {
+                let mut config = existing_config.expect("stale implies parsed config");
+                config.branches.stable = stable_branch.to_string();
+                let content = toml::to_string(&config).map_err(|e| MineError::ConfigInvalid {
+                    path: config_path.clone(),
+                    detail: format!("serialization failed: {e}"),
+                })?;
+                std::fs::write(&config_path, content)?;
+                actions.push(InitAction::RepairedStableBranch {
+                    path: config_path.clone(),
+                    from: recorded_stable.expect("stale implies recorded"),
+                    to: stable_branch.to_string(),
+                });
+            } else {
+                actions.push(InitAction::Preserved(config_path.clone()));
+            }
         } else {
             std::fs::create_dir_all(&mine_dir)?;
-            let config = build_default_config(&identity);
+            let config = build_default_config(&identity, stable_branch);
             let content = toml::to_string(&config).map_err(|e| MineError::ConfigInvalid {
                 path: config_path.clone(),
                 detail: format!("serialization failed: {e}"),
@@ -255,6 +297,19 @@ fn read_existing_identity(config_path: &Path) -> MineResult<Option<RepositoryIde
         repository_id: config.repository_id,
         mine_code_version: config.mine_code_version,
     }))
+}
+
+/// Reads the full existing configuration (including branch settings), if any.
+fn read_existing_config(config_path: &Path) -> MineResult<Option<MineConfig>> {
+    if !config_path.exists() {
+        return Ok(None);
+    }
+    let content = std::fs::read_to_string(config_path)?;
+    let config: MineConfig = toml::from_str(&content).map_err(|e| MineError::ConfigInvalid {
+        path: config_path.to_path_buf(),
+        detail: e.to_string(),
+    })?;
+    Ok(Some(config))
 }
 
 fn read_root_version(cargo_path: &Path) -> Option<String> {
@@ -303,13 +358,13 @@ fn write_marker(path: &Path, marker: &DesignMarker) -> MineResult<()> {
     Ok(())
 }
 
-fn build_default_config(identity: &RepositoryIdentity) -> MineConfig {
+fn build_default_config(identity: &RepositoryIdentity, stable_branch: &str) -> MineConfig {
     MineConfig {
         schema_version: 1,
         repository_id: identity.repository_id.clone(),
         mine_code_version: identity.mine_code_version.clone(),
         branches: BranchesConfig {
-            stable: DEFAULT_STABLE_BRANCH.to_string(),
+            stable: stable_branch.to_string(),
             integration: DEFAULT_INTEGRATION_BRANCH.to_string(),
         },
         design: DesignConfig {

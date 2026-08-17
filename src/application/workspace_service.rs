@@ -72,6 +72,8 @@ impl<'a> WorkspaceService<'a> {
         &self,
         store: &TomlStore,
         stable_baseline_commit: &str,
+        stable_branch: &str,
+        integration_branch: &str,
     ) -> MineResult<WorkspaceOpenOutcome> {
         match store.load() {
             Ok(ws) if !ws.workspace_id.is_empty() => {
@@ -99,8 +101,8 @@ impl<'a> WorkspaceService<'a> {
                     }
                     reloaded.workspace_id = workspace_id;
                     reloaded.stable_baseline_commit = baseline;
-                    reloaded.integration_branch = "dev".to_string();
-                    reloaded.stable_branch = "master".to_string();
+                    reloaded.integration_branch = integration_branch.to_string();
+                    reloaded.stable_branch = stable_branch.to_string();
                     reloaded.revision = expected + 1;
                     Ok(reloaded)
                 })?;
@@ -115,8 +117,12 @@ impl<'a> WorkspaceService<'a> {
             Err(MineError::GraphNotInitialized { .. }) => {
                 // No graph at all: create a fresh workspace at revision 1.
                 let workspace_id = self.uuid_source.new_repository_id();
-                let new_ws =
-                    self.build_initial_workspace(workspace_id.clone(), stable_baseline_commit, "");
+                let new_ws = self.build_initial_workspace(
+                    workspace_id.clone(),
+                    stable_baseline_commit,
+                    stable_branch,
+                    integration_branch,
+                );
                 let toml_content =
                     toml::to_string(&new_ws).map_err(|e| MineError::GraphInvalid {
                         detail: format!("could not serialize execution-graph TOML: {e}"),
@@ -183,15 +189,16 @@ impl<'a> WorkspaceService<'a> {
         &self,
         workspace_id: String,
         stable_baseline_commit: &str,
-        _now: &str,
+        stable_branch: &str,
+        integration_branch: &str,
     ) -> PlanWorkspace {
         PlanWorkspace {
             schema_version: 1,
             revision: 1,
             project_id: "mine-is-not-everyones".to_string(),
             workspace_id,
-            stable_branch: "master".to_string(),
-            integration_branch: "dev".to_string(),
+            stable_branch: stable_branch.to_string(),
+            integration_branch: integration_branch.to_string(),
             stable_baseline_commit: stable_baseline_commit.to_string(),
             design_root: "docs/design/index.md".to_string(),
             ephemeral_workspace: true,
@@ -249,7 +256,7 @@ mod tests {
         std::fs::write(store.toml_path(), toml::to_string(&ws).unwrap()).unwrap();
 
         let svc = WorkspaceService::new(&SystemUuidSource, &SystemClock);
-        let outcome = svc.open(&store, "deadbeef").unwrap();
+        let outcome = svc.open(&store, "deadbeef", "master", "dev").unwrap();
         assert!(!outcome.workspace_id.is_empty());
         assert_eq!(outcome.revision_before, 0);
         assert_eq!(outcome.revision_after, 1);
@@ -264,8 +271,8 @@ mod tests {
         let store = TomlStore::new(root.path());
         seed_empty_graph(root.path());
         let svc = WorkspaceService::new(&SystemUuidSource, &SystemClock);
-        let first = svc.open(&store, "deadbeef").unwrap();
-        let second = svc.open(&store, "deadbeef").unwrap();
+        let first = svc.open(&store, "deadbeef", "master", "dev").unwrap();
+        let second = svc.open(&store, "deadbeef", "master", "dev").unwrap();
         assert_eq!(first.workspace_id, second.workspace_id);
         assert_eq!(first.revision_after, second.revision_after);
         assert_eq!(second.revision_before, second.revision_after);

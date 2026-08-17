@@ -43,12 +43,16 @@ pub struct ReleasePreflight {
     pub can_release: bool,
     pub release_version: String,
     pub dev_commit: String,
-    pub master_commit: String,
-    pub master_unchanged: bool,
+    pub stable_commit: String,
+    pub stable_unchanged: bool,
     pub working_tree_clean: bool,
     pub all_plans_terminal: bool,
     pub design_valid: bool,
     pub graph_valid: bool,
+    /// Informational parity of `skills/` vs `plugins/mine/skills/`. NOT a
+    /// release gate: generic preflight must not require MINE-source assets
+    /// (Design "Repository roles"); the MINE source repo enforces sync via
+    /// its own gates (`mine dist verify`, CI).
     pub distribution_synced: bool,
     pub no_plan_artifacts_on_stable: bool,
     pub no_design_backups_on_stable: bool,
@@ -72,12 +76,33 @@ pub struct CleanupPreview {
 pub fn preflight(repo_root: &Path) -> MineResult<ReleasePreflight> {
     let mut errors = Vec::new();
 
-    // 1. Git evidence: working tree clean, dev/master commits.
+    // Load repository configuration to resolve configured branch names.
+    // Fall back to defaults only when config is absent (first-time preflight
+    // before init, which will report can_release=false anyway).
+    let config = crate::cli::context::load_config(repo_root);
+    let stable_branch = config
+        .as_ref()
+        .map(|c| c.branches.stable.as_str())
+        .unwrap_or("master");
+
+    // 1. Git evidence: working tree clean, dev/stable commits.
     let git_ev = GitEvidence::collect(repo_root);
     let dev_commit = git::head_commit(repo_root).unwrap_or_default();
-    let master_commit = run_git_rev_parse(repo_root, "master")?;
+    let stable_commit = run_git_rev_parse(repo_root, stable_branch)?;
     let working_tree_clean = git_ev.clean;
-    let master_unchanged = master_commit_exists_and_matches_expected(repo_root, &master_commit)?;
+    let stable_unchanged = stable_commit_exists_and_matches_expected(repo_root, &stable_commit)?;
+
+    // A configured stable branch that has no commit (missing in git) must
+    // never be used silently: it is almost always a stale config recorded by
+    // an older MINE version (e.g. `master` in a `main`-only repository).
+    // Report it as a decisive error with an actionable repair path instead of
+    // letting the empty commit propagate into the result.
+    if stable_commit.is_empty() && config.is_some() {
+        errors.push(format!(
+            "configured stable branch '{stable_branch}' not found in this repository \
+             (run `mine init` to repair .mine/config.toml)"
+        ));
+    }
 
     if !working_tree_clean {
         errors.push("working tree is dirty".to_string());
@@ -123,24 +148,36 @@ pub fn preflight(repo_root: &Path) -> MineResult<ReleasePreflight> {
     // 5. Graph renders consistently (TOML matches MD).
     let graph_valid = store.load().is_ok() && store.render().is_ok();
 
-    // 6. Distribution synced (skills == plugins/mine/skills).
+    // 6. Distribution parity is NOT a generic release gate. Per the accepted
+    //    Design (docs/design/integrations/distribution.md -> "Repository
+    //    roles"), the generic `mine release` preflight must not require
+    //    `skills/` or `plugins/mine/skills/` to exist, and must not guess the
+    //    repository role from directory presence. The MINE source repository
+    //    enforces root/generated Skill synchronization through its own
+    //    MINE-local decisive gates: `mine dist verify`, AGENTS.md quality
+    //    tables, and CI (`scripts/sync-plugin-assets.py --check`). The parity
+    //    result is still reported below as an informational field only.
     let distribution_synced = check_distribution_sync(repo_root);
 
-    // 7. No plan artifacts on stable (master).
-    let no_plan_artifacts_on_stable = !path_exists_on_branch(repo_root, "master", "docs/plan/");
-    let no_design_backups_on_stable = !branch_has_design_backups(repo_root, "master")?;
+    // 7. No plan artifacts or design backups on the stable branch.
+    let no_plan_artifacts_on_stable =
+        !path_exists_on_branch(repo_root, stable_branch, "docs/plan/");
+    let no_design_backups_on_stable = !branch_has_design_backups(repo_root, stable_branch)?;
 
     // 8. No pending agent transactions (incomplete installs).
     let pending_agent_transactions = check_pending_transactions(repo_root);
 
-    // 9. Version resolution.
-    let release_version = resolve_release_version(&ws);
+    // 9. Version resolution from the target repository's config.
+    let release_version = resolve_release_version(repo_root);
 
     let can_release = errors.is_empty()
         && all_plans_terminal
         && design_valid
         && graph_valid
-        && distribution_synced
+        // Distribution parity is deliberately NOT part of can_release:
+        // generic preflight must not gate on MINE-source assets (Design
+        // "Repository roles"). The MINE source repo enforces sync via its own
+        // gates (mine dist verify, CI).
         && no_plan_artifacts_on_stable
         && no_design_backups_on_stable
         && pending_agent_transactions.is_empty()
@@ -150,8 +187,8 @@ pub fn preflight(repo_root: &Path) -> MineResult<ReleasePreflight> {
         can_release,
         release_version,
         dev_commit,
-        master_commit,
-        master_unchanged,
+        stable_commit,
+        stable_unchanged,
         working_tree_clean,
         all_plans_terminal,
         design_valid,
@@ -208,9 +245,12 @@ pub fn preview_cleanup(repo_root: &Path) -> MineResult<CleanupPreview> {
     // MINE-managed plan branches (plan/*).
     let mine_managed_plan_branches = list_mine_branches(repo_root);
 
-    // dev branch exists.
-    let dev_branch = if git::branch_exists(repo_root, "dev") {
-        Some("dev".to_string())
+    // integration branch exists.
+    let integration_branch = crate::cli::context::load_config(repo_root)
+        .map(|c| c.branches.integration)
+        .unwrap_or_else(|| "dev".to_string());
+    let dev_branch = if git::branch_exists(repo_root, &integration_branch) {
+        Some(integration_branch)
     } else {
         None
     };
@@ -231,11 +271,13 @@ pub fn preview_cleanup(repo_root: &Path) -> MineResult<CleanupPreview> {
 /// changes. The first release defaults to `0.1.0` (the current managed version)
 /// when no prior release has been made; subsequent releases increment the
 /// patch component.
-fn resolve_release_version(_ws: &crate::domain::graph::PlanWorkspace) -> String {
-    // The managed version from .mine/config.toml is the authoritative source.
-    // The release version is the current config mine_code_version, set via
-    // `mine repository version set --version <semver>` before release closure.
-    crate::cli::context::load_config(&std::env::current_dir().unwrap_or_default())
+fn resolve_release_version(repo_root: &Path) -> String {
+    // The managed version from <repo_root>/.mine/config.toml is the
+    // authoritative source. The release version is the current config
+    // mine_code_version, set via `mine repository version set --version
+    // <semver>` before release closure. Always read from the resolved
+    // repo_root, never from std::env::current_dir().
+    crate::cli::context::load_config(repo_root)
         .map(|c| c.mine_code_version)
         .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string())
 }
@@ -249,6 +291,15 @@ fn validate_design(repo_root: &Path) -> bool {
 fn check_distribution_sync(repo_root: &Path) -> bool {
     let skills = repo_root.join("skills");
     let plugin_skills = repo_root.join("plugins/mine/skills");
+    // A generic repository that does not ship MINE Skills has nothing to
+    // synchronize; the gate is vacuously satisfied. This is not a repo-role
+    // heuristic: the distribution check is inherently about skills/ <->
+    // plugins/mine/skills/ parity, and if neither exists there is nothing to
+    // verify. Only the MINE source repository (which ships skills/) is
+    // subject to the sync requirement.
+    if !skills.is_dir() {
+        return true;
+    }
     match (
         relative_file_bytes(&skills),
         relative_file_bytes(&plugin_skills),
@@ -322,13 +373,14 @@ pub fn branch_has_design_backups(repo_root: &Path, branch: &str) -> MineResult<b
         .any(|line| line.starts_with("docs/design-backup-")))
 }
 
-fn master_commit_exists_and_matches_expected(
+fn stable_commit_exists_and_matches_expected(
     _repo_root: &Path,
-    master_commit: &str,
+    stable_commit: &str,
 ) -> MineResult<bool> {
-    // Verify master hasn't moved unexpectedly (we don't have a stored expected;
-    // this is a structural check that master exists and has a commit).
-    Ok(!master_commit.is_empty())
+    // Verify the stable branch hasn't moved unexpectedly (we don't have a
+    // stored expected; this is a structural check that the stable branch
+    // exists and has a commit).
+    Ok(!stable_commit.is_empty())
 }
 
 fn run_git_rev_parse(repo_root: &Path, ref_name: &str) -> MineResult<String> {
@@ -447,6 +499,92 @@ mod tests {
                 .design_backups
                 .iter()
                 .any(|f| f.contains("design-backup-"))
+        );
+    }
+
+    #[test]
+    fn distribution_gate_passes_without_skills_dirs() {
+        // A generic repository with neither skills/ nor plugins/mine/skills/
+        // reports parity true (informational): there is nothing to compare.
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("README.md"), "product\n").unwrap();
+        assert!(
+            check_distribution_sync(tmp.path()),
+            "distribution parity must be true for a repository without MINE Skills"
+        );
+    }
+
+    #[test]
+    fn distribution_parity_is_informational_not_a_release_gate() {
+        // An external repository that happens to have its own unrelated
+        // skills/ directory (not MINE's) but no plugins/mine/skills/ must
+        // NOT be blocked by the distribution gate: generic preflight must
+        // not guess the repository role from directory presence (Design
+        // "Repository roles"). The parity result is informational only.
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join("skills/team-notes")).unwrap();
+        std::fs::write(
+            tmp.path().join("skills/team-notes/README.md"),
+            "team notes\n",
+        )
+        .unwrap();
+        assert!(
+            !check_distribution_sync(tmp.path()),
+            "parity is false when an unrelated skills/ has no matching plugins copy"
+        );
+        // The gate itself must not decide can_release: parity is reported but
+        // never blocks. This is enforced structurally: `can_release` does not
+        // include `distribution_synced` (see preflight), and the CLI-level
+        // test `external_repo_with_unrelated_skills_is_not_blocked` proves it
+        // end to end.
+    }
+
+    #[test]
+    fn resolve_release_version_reads_target_repo_config() {
+        // Repo A has version 1.2.3; the function must read it from repo A's
+        // config even though the process CWD is elsewhere.
+        let repo_a = tempfile::tempdir().unwrap();
+        let mine_dir = repo_a.path().join(".mine");
+        std::fs::create_dir_all(&mine_dir).unwrap();
+        std::fs::write(
+            mine_dir.join("config.toml"),
+            r#"schema_version = 1
+repository_id = "repo-a"
+mine_code_version = "1.2.3"
+
+[branches]
+stable = "main"
+integration = "dev"
+
+[design]
+root = "docs/design"
+marker = "docs/design/.mine-design.toml"
+language = "en"
+index_soft_limit_lines = 250
+leaf_soft_limit_lines = 400
+
+[plan]
+root = "docs/plan"
+ephemeral = true
+purge_before_stable_release = true
+
+[graph]
+source = "docs/plan/execution-graph.toml"
+rendered = "docs/plan/execution-graph.md"
+lock_timeout_ms = 5000
+"#,
+        )
+        .unwrap();
+
+        // Force CWD away from repo_a (to a different dir).
+        let elsewhere = tempfile::tempdir().unwrap();
+        let prev = std::env::current_dir().unwrap();
+        std::env::set_current_dir(elsewhere.path()).unwrap();
+        let version = resolve_release_version(repo_a.path());
+        std::env::set_current_dir(&prev).unwrap();
+        assert_eq!(
+            version, "1.2.3",
+            "release version must come from the target repo, not the process CWD"
         );
     }
 }

@@ -178,7 +178,13 @@ This reconciles accepted implementation into `docs/design/`, resolves or reports
 
 ### Phase B - mechanical release closure (mine-plan-review)
 
-After the final sync, the reviewer performs the mechanical closure:
+After the final sync, the reviewer performs the mechanical closure. Invoke the Skill in release-closure mode:
+
+```text
+mine-plan-review complete release closure
+```
+
+This mode does not require a Plan path and does not re-accept an already-accepted Plan. It enters only when every Plan is terminal and the final sync has completed; a missing or stale sync stops closure explicitly. The closure steps are:
 
 1. confirm the final `mine-sync` has completed (the reviewer does not run it);
 2. run `mine release --format json` preflight plus the repository's own decisive validation;
@@ -198,14 +204,23 @@ After bootstrap installation (see the README), these CLI commands manage the MIN
 
 ```bash
 mine --version          # verify the installed binary
-mine doctor --agents all  # show managed agent integrations and health
-mine setup              # (re)install MINE into coding agents (interactive)
+mine agent status       # machine-level: list managed agent integrations and health
+mine setup              # machine-level: (re)install MINE into coding agents (interactive)
 mine setup --agents claude-code,codex --yes  # non-interactive, specific agents
-mine update             # update the binary to the latest release
-mine uninstall         # remove MINE from all agents and this machine
+mine update             # machine-level: update the binary to the latest release
+mine uninstall          # machine-level: remove MINE from all agents and this machine
 ```
 
-`mine setup` is **global machine setup** (installs Skills and MCP config into agent client directories). `mine init` is **repository-local** (creates `.mine/config.toml`, the design namespace, and governance at a repository root). Run `mine setup` once per machine; run `mine init` once per repository.
+### Machine-level vs repository-level
+
+MINE has three distinct levels of operation; do not confuse them:
+
+- **`mine setup`** - **machine-level** Agent integration. Installs Skills and MCP configuration into coding-agent client directories. Run once per machine; rerun to add or remove integrations.
+- **`mine init`** - **repository-level** initialization. Creates `.mine/config.toml`, the design namespace, and governance at a repository root. Run once per repository.
+- **`mine agent status`** - **machine-level** status. Lists the managed Agent installations and their health, independent of any repository.
+- **`mine doctor`** - **repository-aware** diagnostics. Full health check of an initialized MINE repository: `.mine/config.toml`, design marker/index, execution graph, Git branch, and (with `--agents`) per-Agent installation state. Run it inside a repository; it is not a machine-level command.
+
+`mine doctor --agents all` is a repository-aware diagnostic for an initialized repository, not a global post-installation check. After a fresh machine-level install, use `mine agent status` to verify integrations.
 
 Non-interactive flags: `--agents <list>` (comma-separated slugs), `--yes` (skip prompts), `--config-root <path>` (isolated install for CI/tests).
 

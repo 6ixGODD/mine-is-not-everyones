@@ -9,6 +9,17 @@
 - must not contain `docs/plan/` or tracked `docs/design-backup-*` paths;
 - direct plan implementation is forbidden.
 
+**Stale recorded branch (migration contract).** A `.mine/config.toml` written by an
+older MINE version may record a stable branch (e.g. `master`) that no longer
+exists in the repository (e.g. a `main`-only repository). Re-running `mine init`
+detects this: when the recorded `branches.stable` provably does not exist in git
+while a different branch is detected, `mine init` repairs the recorded value to
+the detected branch and records an explicit `repaired-stable-branch` action. A
+recorded branch that still exists is kept (it may be intentional). Downstream
+commands never silently use a missing configured branch: `mine release` reports
+it as a decisive, actionable error (run `mine init` to repair), and the doctor
+and workspace commands consume the repaired value after initialization.
+
 ### `dev`
 
 - temporary integration branch for the active body of work;
@@ -152,11 +163,17 @@ This reconciles accepted implementation into `docs/design/`, resolves or reports
 
 ### Phase B - mechanical release closure (mine-plan-review)
 
-After the final sync, the reviewer who accepted the final plan - or the repository owner invoking `mine-plan-review` against the completed graph - carries the mechanical release to local closure in the same session:
+After the final sync, the repository owner invokes `mine-plan-review` in release-closure mode. This is a distinct invocation from single-Plan review: the final Plan may already be `ACCEPTED`, the owner has run a separate `mine-sync` session, and the original reviewer session no longer exists. The executable entry path is:
 
-1. confirm every plan is accepted and integrated into `dev` and the final `mine-sync` has completed;
-2. run product, release, and actual client-discovery verification (`mine release --format json` preflight plus the repository's own decisive gates discovered from `AGENTS.md`, the architecture, and the plan);
-3. determine the next MINE code-repository version from accepted changes and current managed version;
+```text
+mine-plan-review complete release closure
+```
+
+The Skill distinguishes release-closure mode from Plan-review mode by this invocation. No Plan path is required; the Skill reads the graph to confirm every Plan is terminal. Closure proceeds only when the final `mine-sync` is provably fresh; a terminal graph plus a structurally valid Design is **not** sufficient proof. The mechanical closure steps are:
+
+1. confirm every plan is accepted and integrated into `dev` and the final `mine-sync` has completed (Phase A) with reproducible freshness evidence: (a) the Phase A sync report under `.mine/runtime/sync/` records a post-integration commit and `SYNCHRONIZED` status with no blocking uncertainty; (b) the final accepted Plan's `design_references` leaves describe post-implementation behavior; (c) an independent Design-vs-code consistency spot-check on the final Plan's changed surface passes. If any evidence is absent, stale, or contradictory, the Skill reports the final sync as missing or stale and does not proceed;
+2. run `mine release --format json` preflight plus the repository's own decisive gates discovered from `AGENTS.md`, the architecture, and the plan;
+3. determine the next repository version from accepted changes and current managed version (`mine repository version suggest --format json`);
 4. safely purge the MINE-owned `docs/plan/` workspace;
 5. verify no tracked or untracked release-bound plan workspace or design backup enters the stable tree;
 6. integrate the final tree through squash or curated commits so temporary plan history is not imported;

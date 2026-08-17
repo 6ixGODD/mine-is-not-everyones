@@ -133,6 +133,23 @@ fn mine_sync_refuses_legacy_unmarked_design_and_warns() {
         body.to_lowercase().contains("warn"),
         "mine-sync must warn the user about the legacy namespace conflict"
     );
+    // The tripartite contract: mine-sync refuses an unclaimed tree, but the
+    // deterministic resolution is `mine init` auto-backup -- never manual
+    // rename/remove and never silent adoption.
+    assert!(
+        body.contains("deterministic resolution is `mine init`"),
+        "mine-sync must point to `mine init` as the deterministic resolution"
+    );
+    assert!(
+        body.contains("auto-backs-up")
+            && body.contains("docs/design-backup-<UTC timestamp>/")
+            && body.contains("fresh managed root"),
+        "mine-sync must describe init's auto-backup + fresh-root resolution"
+    );
+    assert!(
+        !body.contains("rename or remove the legacy directory"),
+        "mine-sync must never instruct manual rename/remove of the legacy directory"
+    );
 }
 
 #[test]
@@ -377,15 +394,19 @@ fn user_guide_lists_supported_clients_only_and_no_imaginary_commands() {
 }
 
 #[test]
-fn user_guide_names_design_root_progressively_and_warns_on_namespace_conflict() {
+fn user_guide_names_design_root_and_backup_behavior() {
     let guide = read(&repo_root().join("docs/user-guide.md"));
     assert!(
         guide.contains("docs/design/") && guide.contains(".mine-design.toml"),
         "user guide must name the design namespace and marker"
     );
     assert!(
-        guide.contains("legacy") || guide.contains("old repository"),
-        "user guide must warn about legacy namespace conflict"
+        guide.contains("docs/design-backup-<UTC timestamp>/") || guide.contains("design-backup"),
+        "user guide must describe the auto-backup of legacy design content"
+    );
+    assert!(
+        !guide.contains("Rename or remove") && !guide.contains("rename or remove"),
+        "user guide must not instruct manual rename/remove of legacy design"
     );
 }
 
@@ -615,4 +636,372 @@ fn scan_plan_refs_scans_go_layout_and_excludes_docs() {
         !combined.contains("docs/design/arch.md"),
         "scanner must not flag design documentation: {combined}"
     );
+}
+
+#[test]
+fn review_skill_defines_release_closure_mode_invocation() {
+    let review = skill("mine-plan-review");
+    // Executable entry discrimination: the literal must select closure mode and
+    // must never be resolved as a file path.
+    assert!(
+        review.contains("mine-plan-review complete release closure"),
+        "the Skill must define the executable release-closure mode invocation"
+    );
+    assert!(
+        review.contains("never resolve that literal as a plan file path"),
+        "release-closure mode must never treat `complete release closure` as a file path"
+    );
+    assert!(
+        review.contains("Any other single argument is treated as a Plan path"),
+        "any non-closure argument must fall back to Plan-review mode"
+    );
+    assert!(
+        review.contains("No Plan path is required"),
+        "release-closure mode must not require a Plan path"
+    );
+    assert!(
+        review.contains("Never re-accept"),
+        "release-closure mode must not re-accept an already-ACCEPTED plan"
+    );
+    assert!(
+        review.contains("missing or stale"),
+        "release-closure mode must detect a missing or stale final sync"
+    );
+    // Fail-closed on non-terminal graph and on failed freshness checks.
+    assert!(
+        review.contains("every Plan terminal"),
+        "closure mode must enter only when every Plan is terminal"
+    );
+    assert!(
+        review.contains("do **not** proceed"),
+        "closure mode must fail closed instead of proceeding on a gap"
+    );
+    // No push/publish/remote-release authority.
+    assert!(
+        review.contains("Never push, create a remote release, publish a package"),
+        "closure mode must not push, publish, or create remote releases"
+    );
+    assert!(
+        review.contains("delete a remote or unrelated/user branch"),
+        "closure mode must not delete remote or unrelated branches"
+    );
+}
+
+#[test]
+fn review_skill_requires_reproducible_final_sync_freshness_evidence() {
+    let review = skill("mine-plan-review");
+    // The review brief: a terminal graph + structurally valid Design is NOT
+    // proof the final mine-sync ran after the last integration. The Skill must
+    // require explicit, reproducible freshness evidence -- never `mine design
+    // validate` alone as a semantic sync proof.
+    assert!(
+        review.contains("NOT sufficient proof"),
+        "the Skill must state that terminal graph + design validate is not sufficient"
+    );
+    assert!(
+        review.contains("never rely on `mine design validate` alone"),
+        "the Skill must forbid design-validate-only sync proof"
+    );
+    // Evidence 1: the Phase A sync report under .mine/runtime/sync/ with a
+    // recorded commit and SYNCHRONIZED status.
+    assert!(
+        review.contains(".mine/runtime/sync/"),
+        "the Skill must locate the Phase A sync report"
+    );
+    assert!(
+        review.contains("SYNCHRONIZED"),
+        "the Skill must check the sync report status"
+    );
+    // Evidence 2: the final accepted plan's design_references leaves must
+    // describe post-implementation behavior.
+    assert!(
+        review.contains("design_references"),
+        "the Skill must check the final plan's design_references"
+    );
+    assert!(
+        review.contains("post-implementation behavior"),
+        "the Skill must verify leaves describe post-implementation behavior"
+    );
+    // Evidence 3: independent consistency spot-check against current dev code.
+    assert!(
+        review.contains("Independent consistency spot-check"),
+        "the Skill must require an independent design-vs-code spot-check"
+    );
+    // The stale-design adversarial case must fail closed.
+    assert!(
+        review.contains("stale regardless of `mine design validate`"),
+        "a leaf that contradicts code must be stale even if design validate passes"
+    );
+}
+
+#[test]
+fn review_skill_does_not_require_mine_product_distribution_as_universal_gate() {
+    let review = skill("mine-plan-review");
+    // MINE product-distribution checks are allowed ONLY as MINE-source-scoped
+    // conditions, never as universal requirements. Assert the scoping language
+    // exists and that no unconditional four-agent/twelve-tool requirement
+    // remains in imperative form.
+    assert!(
+        review.contains(
+            "apply **only** when the repository under review is the MINE source repository itself"
+        ),
+        "MINE product-distribution checks must be explicitly scoped to the MINE source repository"
+    );
+    // The scoping must be attributed to the target repository's own governance
+    // (AGENTS.md/Design/decisive gates), never to directory-structure sniffing
+    // by the portable Skill.
+    assert!(
+        review.contains("per MINE-local governance"),
+        "MINE-source scoping must be attributed to the target repo's governance"
+    );
+    // The universal closure steps must not contain an imperative install of
+    // all four agents or an unconditional twelve-tool assertion.
+    let closure_section_start = review.find("### Mechanical closure steps").unwrap_or(0);
+    let closure_section = &review[closure_section_start..];
+    assert!(
+        !closure_section.contains("Install all four Agents"),
+        "release closure must not require installing all four Agents as a universal step"
+    );
+    assert!(
+        !closure_section.contains("exposes exactly the twelve accepted MCP tools"),
+        "release closure must not require the twelve-MCP-tool assertion as a universal step"
+    );
+}
+
+#[test]
+fn review_skill_resolves_scanner_from_loaded_skill_path() {
+    let review = skill("mine-plan-review");
+    // The scanner must be resolved from the ACTUALLY LOADED SKILL.md's parent
+    // directory -- not from hardcoded client paths as the primary mechanism.
+    assert!(
+        review.contains("file that is actually loaded"),
+        "the Skill must derive the scanner path from the actually loaded SKILL.md"
+    );
+    assert!(
+        review.contains("Take its parent directory as the Skill directory"),
+        "the Skill must use the loaded SKILL.md's parent as the Skill directory"
+    );
+    assert!(
+        review.contains("<loaded-skill-directory>/references/scan-plan-refs.sh"),
+        "the Skill must join references/ under the loaded Skill directory"
+    );
+    assert!(
+        review.contains("target repository root as the current working directory"),
+        "the Skill must run the scanner with the target repo as CWD"
+    );
+    // Typical client paths are troubleshooting only, and a custom config root
+    // overrides them.
+    assert!(
+        review.contains("NOT a substitute for the loaded-path derivation")
+            && review.contains("custom `--config-root`"),
+        "per-client paths must be troubleshooting-only, not the resolution mechanism"
+    );
+    // The stdin fallback must exist for when the file cannot be located.
+    assert!(
+        review.contains("Fallback (stdin)"),
+        "the Skill must define the stdin fallback for scanner resolution"
+    );
+    assert!(
+        review.contains("bash -s -- --check"),
+        "the stdin fallback must pipe the scanner source to bash"
+    );
+    assert!(
+        review.contains("never needs a local `references/` directory"),
+        "the target repository must never need a local references/ directory"
+    );
+}
+
+#[test]
+fn scanner_runs_from_installed_skill_dir_against_separate_target_repo() {
+    use std::process::Command;
+
+    // Stage a realistic installed Skill layout in a shared parent so the
+    // installed Skill directory is a sibling of the target repository. The
+    // scanner is then invoked by a path relative to the target repo's CWD,
+    // which Git Bash resolves without drive-letter issues.
+    let parent = tempfile::tempdir().unwrap();
+    let installed_refs = parent
+        .path()
+        .join("installed/skills/mine-plan-review/references");
+    std::fs::create_dir_all(&installed_refs).unwrap();
+    let scanner_bytes =
+        std::fs::read(repo_root().join("skills/mine-plan-review/references/scan-plan-refs.sh"))
+            .unwrap();
+    std::fs::write(installed_refs.join("scan-plan-refs.sh"), &scanner_bytes).unwrap();
+
+    // A separate target repository with a Go-layout file and NO local
+    // references/ directory.
+    let target = parent.path().join("target");
+    std::fs::create_dir_all(&target).unwrap();
+    let cmd_dir = target.join("cmd");
+    std::fs::create_dir_all(&cmd_dir).unwrap();
+    std::fs::write(
+        cmd_dir.join("main.go"),
+        // mine-release-allow-plan-reference: scanner test fixture
+        "package main\n// Plan 99 historical comment\nfunc main() {}\n",
+    )
+    .unwrap();
+    let _ = Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(&target)
+        .status()
+        .unwrap();
+    let _ = Command::new("git")
+        .args(["config", "user.email", "t@t"])
+        .current_dir(&target)
+        .status()
+        .unwrap();
+    let _ = Command::new("git")
+        .args(["config", "user.name", "t"])
+        .current_dir(&target)
+        .status()
+        .unwrap();
+    let _ = Command::new("git")
+        .args(["add", "-A"])
+        .current_dir(&target)
+        .status()
+        .unwrap();
+    let _ = Command::new("git")
+        .args(["commit", "-qm", "test"])
+        .current_dir(&target)
+        .status()
+        .unwrap();
+    assert!(
+        !target.join("references").exists(),
+        "the target repository must not contain a local references/ directory"
+    );
+
+    // Invoke the scanner from its installed location (a sibling of the
+    // target repo) while the target repository is the working directory.
+    // A relative path from the target CWD avoids Windows drive-letter issues.
+    let scanner_rel = "../installed/skills/mine-plan-review/references/scan-plan-refs.sh";
+    let cmd = format!("bash \"{scanner_rel}\" --check");
+    let out = Command::new("bash")
+        .arg("-c")
+        .arg(&cmd)
+        .current_dir(&target)
+        .output()
+        .unwrap();
+    assert!(
+        !out.status.success(),
+        "scanner invoked from installed location must flag cmd/main.go (Go layout)"
+    );
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        combined.contains("cmd/main.go"),
+        "scanner output must name the Go-layout file: {combined}"
+    );
+    // The scanner internally cd's to the target repo's git toplevel; verify it
+    // did not scan the installed Skill directory instead.
+    assert!(
+        !combined.contains("scan-plan-refs.sh:"),
+        "scanner must not flag its own installed copy: {combined}"
+    );
+    // Also verify the clean case: a target repo with only docs/design content
+    // passes from the same installed location.
+    let clean_target = parent.path().join("clean_target");
+    std::fs::create_dir_all(clean_target.join("docs/design")).unwrap();
+    // mine-release-allow-plan-reference: scanner test fixture
+    std::fs::write(clean_target.join("docs/design/arch.md"), "# Plan 99 doc\n").unwrap();
+    let _ = Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(&clean_target)
+        .status()
+        .unwrap();
+    let _ = Command::new("git")
+        .args(["config", "user.email", "t@t"])
+        .current_dir(&clean_target)
+        .status()
+        .unwrap();
+    let _ = Command::new("git")
+        .args(["config", "user.name", "t"])
+        .current_dir(&clean_target)
+        .status()
+        .unwrap();
+    let _ = Command::new("git")
+        .args(["add", "-A"])
+        .current_dir(&clean_target)
+        .status()
+        .unwrap();
+    let _ = Command::new("git")
+        .args(["commit", "-qm", "test"])
+        .current_dir(&clean_target)
+        .status()
+        .unwrap();
+    let out2 = Command::new("bash")
+        .arg("-c")
+        .arg(&cmd)
+        .current_dir(&clean_target)
+        .output()
+        .unwrap();
+    assert!(
+        out2.status.success(),
+        "scanner must pass on a clean target repo: {}",
+        String::from_utf8_lossy(&out2.stderr)
+    );
+}
+
+#[test]
+fn user_guide_uses_agent_status_for_machine_level_lifecycle() {
+    let guide = read(&repo_root().join("docs/user-guide.md"));
+    assert!(
+        guide.contains("mine agent status"),
+        "user guide must document `mine agent status` for machine-level installation status"
+    );
+    // `mine doctor --agents all` must not be presented as a machine-level
+    // post-installation check; it is repository-aware.
+    let lifecycle_section_start = guide.find("## Installation and lifecycle").unwrap_or(0);
+    let lifecycle = &guide[lifecycle_section_start..];
+    let status_line = lifecycle
+        .lines()
+        .find(|l| l.contains("mine doctor --agents all"))
+        .map(str::to_string)
+        .unwrap_or_default();
+    assert!(
+        !status_line.contains("verify the installed binary")
+            && !status_line.contains("list managed agent integrations"),
+        "mine doctor --agents all must not be presented as the machine-level install check"
+    );
+    assert!(
+        lifecycle.contains("machine-level") && lifecycle.contains("repository-aware"),
+        "user guide must distinguish machine-level from repository-aware commands"
+    );
+}
+
+#[test]
+fn docs_readme_anchor_points_to_installation_and_lifecycle() {
+    let readme = read(&repo_root().join("docs/README.md"));
+    assert!(
+        readme.contains("user-guide.md#installation-and-lifecycle"),
+        "docs/README.md must link to the actual heading anchor"
+    );
+    assert!(
+        !readme.contains("user-guide.md#installation)"),
+        "docs/README.md must not use the stale #installation anchor"
+    );
+}
+
+#[test]
+fn en_zh_readmes_share_lifecycle_semantics() {
+    let en = read(&repo_root().join("README.md"));
+    let zh = read(&repo_root().join("README.zh-CN.md"));
+    // Both must point at the lifecycle section and name the same core commands.
+    for (name, text) in [("en", &en), ("zh", &zh)] {
+        assert!(
+            text.contains("installation-and-lifecycle"),
+            "{name} README must link the user-guide lifecycle section"
+        );
+        assert!(
+            text.contains("mine setup"),
+            "{name} README must mention `mine setup`"
+        );
+        assert!(
+            text.contains("bootstrap"),
+            "{name} README must mention bootstrap installation"
+        );
+    }
 }

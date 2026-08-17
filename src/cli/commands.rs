@@ -238,7 +238,9 @@ fn init(parsed: &crate::cli::ParsedArgs, _rest: &[String]) -> HandlerResult {
     // unavailable; we enrich its outcome with the detected branch.
     let detected_branch = git::detect_stable_branch(&repo_root, "master");
     let svc = InitService::new(&SystemUuidSource, &SystemClock);
-    let outcome = svc.initialize(&repo_root).map_err(ctx_err)?;
+    let outcome = svc
+        .initialize(&repo_root, &detected_branch)
+        .map_err(ctx_err)?;
     let mut env = envelope_for("init", Some(&repo_root))
         .with_workspace_id(outcome.repository_id.clone())
         .with_data(json!({
@@ -254,6 +256,7 @@ fn init(parsed: &crate::cli::ParsedArgs, _rest: &[String]) -> HandlerResult {
                 crate::application::init_service::InitAction::Preserved(p) => json!({"kind":"preserved","path": p.display().to_string()}),
                 crate::application::init_service::InitAction::CreatedSection(p) => json!({"kind":"created-section","path": p.display().to_string()}),
                 crate::application::init_service::InitAction::BackedUpDesign { backup_path } => json!({"kind":"backed-up-design","backup_path": backup_path.display().to_string()}),
+                crate::application::init_service::InitAction::RepairedStableBranch { path, from, to } => json!({"kind":"repaired-stable-branch","path": path.display().to_string(),"from": from, "to": to}),
             }).collect::<Vec<_>>(),
         }));
     env = env.with_revision(0, 0); // init is not a graph mutation
@@ -492,8 +495,13 @@ fn graph_summary(w: &PlanWorkspace) -> Value {
 fn workspace_open(parsed: &crate::cli::ParsedArgs, _rest: &[String]) -> HandlerResult {
     let ctx = build_context(&parsed.global).map_err(ctx_err)?;
     let baseline = git::head_commit(&ctx.repo_root).unwrap_or_default();
+    let (stable_branch, integration_branch) = crate::cli::context::load_config(&ctx.repo_root)
+        .map(|c| (c.branches.stable, c.branches.integration))
+        .unwrap_or_else(|| ("master".to_string(), "dev".to_string()));
     let svc = WorkspaceService::new(&SystemUuidSource, &SystemClock);
-    let outcome = svc.open(&ctx.store, &baseline).map_err(ctx_err)?;
+    let outcome = svc
+        .open(&ctx.store, &baseline, &stable_branch, &integration_branch)
+        .map_err(ctx_err)?;
     let mut env = envelope_for("workspace.open", Some(&ctx.repo_root))
         .with_workspace_id(outcome.workspace_id.clone())
         .with_revision(outcome.revision_before, outcome.revision_after)
@@ -1472,8 +1480,8 @@ fn release_preflight(parsed: &crate::cli::ParsedArgs, rest: &[String]) -> Handle
             value: pf.dev_commit.clone(),
         });
         lines.push(HumanLine::Field {
-            key: "  master".to_string(),
-            value: pf.master_commit.clone(),
+            key: "  stable".to_string(),
+            value: pf.stable_commit.clone(),
         });
     }
     Ok((env_data, lines))
