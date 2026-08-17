@@ -373,7 +373,10 @@ mod tests {
         let out = r#"{"command":"__refresh-skills","data":{"mine_version":"0.1.6","refreshed":["claude-code","pi"],"errors":[]},"ok":true}"#;
         let r = parse_refresh_report(out).expect("envelope must parse");
         assert_eq!(r.mine_version, "0.1.6");
-        assert_eq!(r.refreshed, vec!["claude-code".to_string(), "pi".to_string()]);
+        assert_eq!(
+            r.refreshed,
+            vec!["claude-code".to_string(), "pi".to_string()]
+        );
         assert!(r.errors.is_empty());
     }
 
