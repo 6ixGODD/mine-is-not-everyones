@@ -220,12 +220,13 @@ The Skill distinguishes release-closure mode from Plan-review mode by this invoc
 
 1. confirm every plan is accepted and integrated into `dev` and the final `mine-sync` has completed (Phase A) with reproducible freshness evidence: (a) the Phase A sync report under `.mine/runtime/sync/` records a post-integration commit and `SYNCHRONIZED` status with no blocking uncertainty; (b) the final accepted Plan's `design_references` leaves describe post-implementation behavior; (c) an independent Design-vs-code consistency spot-check on the final Plan's changed surface passes. If any evidence is absent, stale, or contradictory, the Skill reports the final sync as missing or stale and does not proceed;
 2. run `mine release --format json` preflight plus the repository's own decisive gates discovered from `AGENTS.md`, the architecture, and the plan;
-3. determine the next repository version from accepted changes and current managed version (`mine repository version suggest --format json`);
-4. safely purge the MINE-owned `docs/plan/` workspace;
-5. verify no tracked or untracked release-bound plan workspace or design backup enters the stable tree;
-6. integrate the final tree through squash or curated commits so temporary plan history is not imported;
-7. tag when configured;
-8. delete local managed `plan/*` and `dev` branches.
+3. run the native stale-plan-reference gate `mine scan plan-refs --check --format json` (authoritative cross-platform scanner; no Bash/WSL dependency) and record every line-local fixture exemption;
+4. determine the next repository version from accepted changes and current managed version (`mine repository version suggest --format json`);
+5. safely purge the MINE-owned `docs/plan/` workspace;
+6. verify no tracked or untracked release-bound plan workspace or design backup enters the stable tree;
+7. integrate the final tree through squash or curated commits so temporary plan history is not imported;
+8. tag when configured;
+9. delete local managed `plan/*` and `dev` branches.
 
 The reviewer never pushes, creates a remote release, publishes a package, force-updates history, or deletes a remote or unrelated/user branch. Remote publication remains explicitly outside MINE's authority unless the user separately requests it.
 

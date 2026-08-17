@@ -1,6 +1,6 @@
 ---
 name: mine-plan-create
-description: Create or update an evidence-backed, architecture-governed software implementation plan that is precise enough for independent coding agents to execute without rediscovering design decisions. Use for initial project planning, incremental features, refactors, migrations, agent workflows, data/retrieval/tool contracts, or compensating plans. Requires current repository inspection, mandatory web research of official documentation and best practices, SOLID review, architecture updates when needed, dependency-aware parallel work packages, exact verification, and execution-graph maintenance.
+description: Create or update an evidence-backed, architecture-governed software implementation plan that is precise enough for independent coding agents to execute without rediscovering design decisions. Scope-first: an explicit user scope defines the planning boundary; research-backed: substantive planning requires mandatory scope-bounded web research comparing established practice; evidence-on-demand: repository inspection is proportional to scope. Use for initial project planning, incremental features, refactors, migrations, agent workflows, data/retrieval/tool contracts, or compensating plans. Routes material Design gaps back to mine-arch; never silently overrides accepted Design.
 ---
 
 # MINE Plan Create
@@ -70,20 +70,67 @@ Do not reference a bundled or repository file unless it actually exists. Links i
 
 ## Non-negotiable rules
 
-1. Inspect the actual repository before designing.
-2. Read the architecture document deeply, not just its headings or search snippets.
-3. Perform real web search and open the authoritative pages during every planning run.
+1. Inspect the actual repository evidence relevant to the requested scope before designing. For an explicit-scope invocation, inspection is proportional to that scope.
+2. Inspect the Design relevant to the requested scope deeply, not just its headings or search snippets. Respect accepted architecture by default; do not broaden into unrelated Design leaves.
+3. Perform real web search and open the authoritative pages during every substantive planning run, bounded to the requested scope and its real dependencies.
 4. Prefer official documentation, standards, specifications, source repositories, release notes, and primary research over secondary summaries.
 5. Record verified links and the exact claim each source supports inside the plan.
-6. Never finalize an implementation-ready plan when required web search or page fetching is unavailable. Report the missing research capability and leave the plan explicitly `DRAFT` or do not create it.
-7. Follow the architecture and SOLID. Do not use a plan to silently redesign the system.
-8. If the target work requires an architecture change, update the `docs/design/` knowledge base first (the affected leaf/index), then make the plan cite the updated design paths and anchors.
+6. Never finalize an implementation-ready plan when required web research or page fetching is unavailable. Report the missing research capability and leave the plan explicitly `DRAFT` or do not create it.
+7. Respect accepted architecture and Design by default. Inspect SOLID concerns (ownership, dependency direction, new abstraction/interface/component boundaries) only when the requested scope actually crosses a boundary or introduces such a structure. Do not use a plan to silently redesign the system.
+8. If the target work requires an architecture change, update the `docs/design/` knowledge base first (the affected leaf/index), then make the plan cite the updated design paths and anchors. If planning reveals a material Design gap, stop that portion and route the decision back to `mine-arch`; do not silently solve it inside the Plan.
 9. Do not preserve obsolete implementations merely because an earlier plan created them. Unless the user explicitly requires compatibility, change the target implementation directly and schedule cleanup of superseded fields, interfaces, parameters, adapters, migrations, aliases, and shims.
 10. Preserve unrelated user changes and never invent evidence, commands, files, APIs, tool names, test results, or external behavior.
+
+## Scope-first principle
+
+`mine-plan-create` is **scope-first, research-backed, evidence-on-demand**:
+
+- **Explicit user scope is the authoritative planning boundary.** When the
+  invocation names a requirement, component, previous discussion, Design
+  change, or implementation target, treat that scope as authoritative. Stay
+  within it: inspect only the Design, code, tests, configuration, graph
+  state, reports, and external material needed to make that scope
+  executable. Do not broaden into unrelated repository areas, audit
+  unrelated Design leaves, or inspect unrelated accepted reports. Uncertainty
+  inside the scope may expand evidence collection.
+- **Bare invocation may enter discovery mode.** A bare invocation with no
+  explicit planning target may perform broader discovery to identify the next
+  unplanned or actionable Design work - but prefer the smallest coherent
+  planning frontier. Do not turn every bare invocation into an unconditional
+  full-repository audit.
+- **Research stays mandatory and scope-bounded.** See Phase 4.
 
 ## Phase 1: Establish the planning mode
 
 Classify the request before editing:
+
+### Explicit-scope mode (primary)
+
+The user supplied a concrete scope. In this mode:
+
+1. Resolve the scope: restate the concrete target (requirement, component,
+   Design change, discussion topic) from the invocation.
+2. Read the relevant accepted Design (the leaves and necessary parent/index
+   context that govern the scope) - not the whole tree.
+3. Inspect the relevant implementation, tests, configuration, graph state,
+   and predecessor reports only when they materially affect the requested
+   work.
+4. Perform mandatory scope-bounded external research (Phase 4).
+5. Create precise Plan(s) for that scope; register and release them.
+
+Do not: audit unrelated modules, reread the entire Design tree, inspect every
+accepted report, research unrelated technologies, or perform a ceremonial
+repository-wide review.
+
+### Bare-invocation discovery mode
+
+No explicit planning target. In this mode, broader discovery is allowed to
+identify what should be planned next:
+
+1. Inspect current Design and the execution graph frontier.
+2. Consider recent accepted work and repository state relevant to the next
+   unplanned or actionable Design work.
+3. Identify the smallest coherent planning frontier and plan that.
 
 ### Zero-plan / initial architecture mode
 
@@ -102,12 +149,12 @@ In zero-plan mode:
 4. Produce the initial execution graph and identify the smallest useful accepted baseline.
 5. Maximize safe parallelism, but do not parallelize unresolved shared contracts or files with unclear ownership.
 
-### Incremental mode
+### Incremental mode (within any of the above)
 
-In an established repository:
+In an established repository with an accepted baseline:
 
-1. Identify the accepted baseline and target plan frontier.
-2. Read all architecture sections, accepted reports, interfaces, and code touched by the requested change.
+1. Identify the accepted baseline and the target plan frontier for the scope.
+2. Inspect the architecture, reports, interfaces, and code touched by the requested change - not unrelated areas.
 3. Detect whether the request is a new feature, direct correction, refactor, migration, cleanup, or compensating plan.
 4. Do not revise an immutable handed-off or executed plan. Update architecture and create a new next-numbered compensating plan only for a
    substantial correction (material Design change, replaced core approach, a new independent work package, or major scope expansion). A narrow,
@@ -115,23 +162,23 @@ In an established repository:
    executor's direct fix, documented in its own report, not a new plan. Do not create a plan merely to preserve reviewer/implementer role
    purity.
 
-## Phase 2: Gather complete evidence
+## Phase 2: Gather evidence proportional to scope
 
-Read in this order:
+Read, in order, only what the requested scope requires:
 
-1. User requirements and supplied artifacts.
+1. User requirements and supplied artifacts (the explicit scope is authoritative).
 2. Root `AGENTS.md`.
-3. `docs/design/index.md` and the relevant domain/component indexes and leaves in full, plus surrounding sections needed to understand boundaries and invariants.
+3. The Design leaves governing the requested scope, plus the necessary parent/index context - not the whole tree. In discovery mode, read the index and relevant frontier leaves.
 4. Query the execution graph through the final `mine` MCP tools or `mine --format json`; use the generated Markdown only as a readable view.
-5. Relevant existing plans and implementation/review reports.
-6. Repository manifests, lockfiles, toolchain files, CI, deployment files, generated-schema ownership, and Git status/history relevant to the work.
-7. Relevant source code, tests, schemas, migrations, prompts, tools, API specifications, and generated artifacts.
-8. Current official documentation and best practices fetched from the web.
+5. Predecessor plans and implementation/review reports only when they materially affect the requested work.
+6. Manifests, lockfiles, toolchain files, CI, deployment files, and Git status relevant to the scope.
+7. Relevant source code, tests, schemas, and generated artifacts for the scope.
+8. Current official documentation and best practices fetched from the web (scope-bounded; see Phase 4).
 
-Create an evidence matrix containing at least:
-
-| Area | Current implementation | Evidence path or URL | Verified behavior | Gap or decision |
-|---|---|---|---|---|
+Do **not** require by default: reading the entire Design tree; reviewing every
+accepted Plan or report; auditing every manifest, CI file, deployment file, or
+unrelated subsystem; or repository-wide evidence matrices. Expand repository
+inspection only when a concrete planning question requires more evidence.
 
 Keep these categories visibly separate:
 
@@ -142,25 +189,57 @@ Keep these categories visibly separate:
 - unresolved material decisions;
 - bounded local implementation decisions.
 
-## Phase 3: Parallel research
+An evidence matrix is optional and scope-scaled: include one when the scope
+spans several areas or subsystems; do not produce a repository-wide matrix by
+default.
 
-When parallel agents are available, assign independent research lanes with explicit questions and expected output. Useful lanes include:
+## Phase 3: Parallel research (optional, scope-scaled)
 
-1. Repository reality and dependency graph.
-2. Architecture boundaries, SOLID, lifecycle, and ownership.
+When parallel agents are available **and** the requested scope genuinely spans
+several independent research questions, assign bounded research lanes with
+explicit questions and expected output. Useful lanes include:
+
+1. Repository reality for the scope.
+2. Architecture boundaries, ownership, and lifecycle relevant to the scope.
 3. Official framework/library/API documentation and version constraints.
-4. Data model, transactions, concurrency, consistency, and migrations.
-5. Security, privacy, authorization, secrets, and failure handling.
-6. Toolchain, static checks, tests, CI, build, deployment, and observability.
+4. Data model, transactions, concurrency, consistency, and migrations relevant to the scope.
+5. Security, privacy, authorization, secrets, and failure handling relevant to the scope.
+6. Toolchain, static checks, tests, CI, build, deployment, and observability relevant to the scope.
 7. Parallel execution decomposition and shared-file collision analysis.
 
 Each lane must return evidence, source links, concrete implications, unresolved decisions, and risks. Synthesize the results yourself; do not paste mutually contradictory subagent reports into the plan.
 
-When the host cannot run subagents, perform the same lanes sequentially. Do not name or invoke a tool that the host does not expose.
+A single coherent scope does not require parallel lanes. When the host cannot run subagents, perform the needed research sequentially. Do not name or invoke a tool that the host does not expose.
 
-## Phase 4: Mandatory external research
+## Phase 4: Mandatory external research (scope-bounded)
 
-Search the web for every external technology, protocol, standard, service, or architecture pattern whose behavior affects the plan.
+External research is **mandatory for every substantive planning run** and is
+part of MINE's engineering discipline. It is also **bounded to the requested
+scope**: search for the external technologies, protocols, standards,
+services, or architecture patterns the requested scope depends on - not
+unrelated repository subsystems.
+
+Research should answer questions such as:
+
+- How is this problem normally solved in mature systems?
+- Is there already a standard abstraction, protocol, pattern, or library for this?
+- What do the official framework or platform docs recommend?
+- How do mature open-source projects implement the same mechanism?
+- What failure modes are already well known?
+- What implementation conventions should be followed instead of inventing a local mechanism?
+
+The purpose is **not** to satisfy a documentation ritual: it is to avoid
+closed-world design and unnecessary invention. Research compares established
+approaches (concurrency control, transactional outbox, retry/backoff,
+idempotency, auth/session lifecycle, migration strategies, locking models,
+worker scheduling, state machines, test isolation, configuration ownership,
+and similar) - not merely to verify API syntax.
+
+For example, a Passkey-login scope reasonably includes WebAuthn/Passkey
+standards, the selected framework's integration guidance, credential and
+challenge lifecycle, and known security/compatibility constraints - but does
+not justify researching unrelated storage, CI, deployment, or observability
+subsystems unless the scope actually depends on them.
 
 For each source:
 
@@ -178,6 +257,27 @@ For each source:
 
 The plan must contain a **Research source register**. A raw list of links is insufficient; every link must support a specific plan decision, step, test, or risk.
 
+## Responsibility boundary with `mine-arch`
+
+- `mine-arch` owns: requirements interpretation; target architecture;
+  durable engineering decisions; component boundaries; public contracts;
+  important data, lifecycle, security, consistency, deployment, or ownership
+  decisions; changing accepted Design.
+- `mine-plan-create` owns: turning accepted Design into executable
+  implementation work; resolving bounded implementation details;
+  decomposing work; determining dependencies and write scopes; defining
+  verification; identifying safe parallelism.
+- If planning reveals a missing decision that materially changes product
+  behavior, architecture, public API, persistent data semantics, a security,
+  ownership, or compatibility boundary, deployment topology, or another
+  durable engineering contract: **stop planning that portion and route the
+  decision back to `mine-arch`**. Do not silently solve it inside the Plan.
+- Research may validate accepted Design, refine implementation details, or
+  reveal risks and incompatibilities - but it must **never silently replace
+  accepted Design** because another project or article uses a different
+  approach. If research shows accepted Design is materially wrong or
+  incomplete, report the conflict and return that decision to `mine-arch`.
+
 ## Phase 5: Resolve decisions
 
 Ask the user before finalizing when a decision materially changes any of these:
@@ -193,26 +293,19 @@ Ask the user before finalizing when a decision materially changes any of these:
 
 Do not interrupt for bounded implementation choices that do not change those contracts. Resolve such choices using current architecture, official documentation, repository convention, and the smallest maintainable design. Record them under **Local decisions made by the planner**.
 
-## Phase 6: Architecture and SOLID gate
+## Phase 6: Architecture gate (conditional, no checklist theater)
 
-Before writing implementation steps, verify traceability from requirement to architecture and inspect the design using SOLID:
+Respect accepted architecture by default. Before writing implementation steps, verify traceability from the requested scope to its governing architecture, and inspect deeper only when the scope actually crosses a boundary or introduces a new abstraction/interface/component/dependency structure:
 
-- **Single Responsibility:** each component, module, service, tool, and configuration owner has one coherent reason to change.
-- **Open/Closed:** variability is introduced at real change boundaries, not by speculative extension points.
-- **Liskov Substitution:** implementations preserve the behavioral, error, lifecycle, and data contracts of their abstractions.
-- **Interface Segregation:** consumers depend on narrow capability contracts rather than broad service or root-settings objects.
-- **Dependency Inversion:** policy and domain layers depend on abstractions; concrete SDKs, storage, transport, and framework wiring remain at adapters/composition roots.
-
-Also verify:
-
-- dependency direction and forbidden imports;
-- explicit composition roots and resource ownership;
-- state ownership, lifecycle, idempotency, concurrency, retries, and failure semantics;
-- no duplicate source of truth;
+- ownership and dependency direction for the affected boundary;
+- state ownership, lifecycle, idempotency, concurrency, retries, and failure semantics for the affected component;
+- no duplicate source of truth in the new structure;
 - no speculative abstraction or interface with only imagined consumers;
-- no obsolete compatibility layer unless explicitly required.
+- SOLID concerns (Single Responsibility, Open/Closed, Liskov, Interface Segregation, Dependency Inversion) applied to newly introduced or changed abstractions, not as a repository-wide checklist.
 
-If the accepted design knowledge base cannot support the request cleanly, update the relevant `docs/design/` leaf/index first. Include exact design paths (and anchors where applicable) in the plan.
+Do not require a full SOLID checklist or a repository-wide architecture audit on every Plan. Inspect architecture more deeply when the requested scope crosses a real boundary; check ownership/dependency direction when affected; check SOLID concerns when a new abstraction, interface, component boundary, or dependency structure is actually being introduced or changed.
+
+If the accepted design knowledge base cannot support the request cleanly, update the relevant `docs/design/` leaf/index first (or route the decision to `mine-arch` when it is a material gap). Include exact design paths (and anchors where applicable) in the plan.
 
 ## Phase 7: Design for parallel execution
 
@@ -324,11 +417,11 @@ actual implemented contract and update this Skill before release.
 Before finishing, verify all of the following:
 
 - The cited `docs/design/` leaves/anchors exist and every cited section is real.
-- Architecture changes were made before the dependent plan.
-- Mandatory web research was completed using opened authoritative pages.
+- Architecture changes were made before the dependent plan; material Design gaps were routed back to `mine-arch`, not silently solved.
+- Mandatory **scope-bounded** web research was completed using opened authoritative pages.
 - Every external link is real, current enough for the decision, and tied to a claim.
 - The plan does not contain a dead local reference.
-- The design follows SOLID without speculative abstraction.
+- Accepted architecture is respected; SOLID/speculative-abstraction concerns were checked where the scope actually introduces or changes a boundary.
 - Current reality, target design, assumptions, and decisions are separate.
 - Every work package has explicit ownership, file scope, dependencies, output, tests, and join gate.
 - Shared files have one serial owner.
@@ -338,6 +431,6 @@ Before finishing, verify all of the following:
 - Obsolete implementation is removed or explicitly scheduled for removal; no accidental compatibility debt is introduced.
 - MINE successfully registered the plan and the validated graph accurately represents dependencies and status.
 - No handed-off or executed immutable plan was rewritten.
-- No unrelated files are modified or staged.
+- No unrelated files are modified or staged; the invocation scope was respected.
 
 Finish with the created or updated architecture sections, plan path, graph status, parallel groups, unresolved gates, and the exact next executable work packages. Do not claim readiness when any required evidence is absent.

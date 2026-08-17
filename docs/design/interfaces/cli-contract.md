@@ -29,6 +29,7 @@ mine repository version show|suggest|set
 mine agent config|install|uninstall|status
 mine dist sync|verify
 mine scan plan-refs
+mine release
 mine mcp serve
 ```
 
@@ -240,7 +241,7 @@ arbitrary graph-editing CLI is introduced.
 
 - inspects **tracked** repository content (`git ls-files`), never an uncontrolled filesystem walk;
 - detects temporary historical Plan references matching `(^|[^[:alnum:]_])[Pp]lan[[:space:]-]*[0-9]`;
-- excludes temporary planning state and accepted documentation: `docs/plan/**`, `docs/design/**`, `docs/design-backup-*/**`, `docs/README.md`, root `README.md` / `README.zh-CN.md`, `tests/fixtures/**`, `**/testdata/**`;
+- excludes temporary planning state and accepted documentation: `docs/plan/**`, `docs/design/**`, `docs/design-backup-*/**`, user-facing docs (`docs/concepts*`, `docs/user-guide*`, `docs/README.md`), root `README.md` / `README.zh-CN.md`, `tests/fixtures/**`, `**/testdata/**`;
 - honors the explicit fixture exemption marker `mine-release-allow-plan-reference:` on the immediately preceding line;
 - never rewrites source; it only reports evidence;
 - reports exact `file:line` findings;

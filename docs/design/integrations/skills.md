@@ -88,6 +88,66 @@ It:
 - defines ownership, dependencies, verification, and reports;
 - refuses planning on the stable branch.
 
+### Scope-first planning contract
+
+`mine-plan-create` is **scope-first, research-backed, evidence-on-demand**:
+
+- **Explicit user scope is the authoritative planning boundary.** When the
+  user invokes the Skill with a clear requirement, component, previous
+  discussion, Design change, or implementation target, the planner stays
+  within that scope: it inspects only the Design, code, tests,
+  configuration, graph state, reports, and external material needed to make
+  that scope executable, and does not broaden into unrelated repository
+  areas. Uncertainty inside the scope may expand evidence collection.
+- **A bare invocation may enter discovery mode.** With no explicit planning
+  target, the Skill may perform broader discovery to identify the next
+  unplanned or actionable Design work, preferring the smallest coherent
+  planning frontier rather than an unconditional full-repository audit.
+- **Research remains mandatory and scope-bounded.** Substantive planning
+  requires external research within the requested scope: official
+  documentation, normative standards, mature implementations, and known
+  failure modes. Research exists to compare established practice and prevent
+  unnecessary invention - not to satisfy a documentation ritual, and not to
+  broaden into unrelated subsystems. Research may validate, refine, or
+  reveal risks in accepted Design, but it cannot silently override it; a
+  material Design conflict returns to `mine-arch`.
+- **Evidence collection is proportional.** Repository inspection scales with
+  scope: relevant Design leaves, graph state, implementation, tests, and
+  predecessor reports only when they materially affect the requested work.
+  No repository-wide evidence matrices, full Design-tree reads, or audits of
+  every accepted report are required by default.
+- **No ceremonial SOLID review.** Accepted architecture is respected by
+  default; architecture, ownership, dependency direction, and SOLID concerns
+  are inspected when the requested scope crosses a real boundary or
+  introduces a new abstraction/interface/component.
+- **Plans stay implementation-ready.** Scope-first planning does not make
+  Plans vague: exact scope, Design references, write boundaries,
+  implementation targets, behavior, semantics, acceptance criteria,
+  verification commands, and commit boundaries remain required.
+
+### Responsibility boundary with `mine-arch`
+
+`mine-arch` owns requirements interpretation, target architecture, durable
+engineering decisions, component boundaries, public contracts, and changes to
+accepted Design. `mine-plan-create` turns accepted Design into executable
+implementation work: resolving bounded implementation details, decomposing
+work, determining dependencies and write scopes, defining verification, and
+identifying safe parallelism. If planning reveals a missing decision that
+materially changes product behavior, architecture, public API, persistent
+data semantics, a security/ownership/compatibility boundary, deployment
+layout, or another durable engineering contract, planning stops for that
+portion and the decision routes back to `mine-arch`.
+
+### Research philosophy
+
+The broader MINE research philosophy, shared by `mine-arch` (broadest),
+`mine-plan-create` (scope-bounded implementation research), and `mine-sync`
+(understanding observed reality, never overriding it), is:
+
+```text
+observe repository reality -> compare established practice -> make a project-specific decision
+```
+
 ## `mine-plan-exec`
 
 It:

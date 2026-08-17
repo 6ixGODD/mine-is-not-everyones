@@ -1,10 +1,16 @@
 # MINE 用户指南
 
-这份指南按照你实际使用 MINE 的顺序来写。如果你只想先理解它为什么这样设计，可以直接看[核心概念](concepts.zh-CN.md)。
+本指南介绍 MINE 的实际使用方式。
 
-## 1. 安装 MINE
+关于 Design、Plan、Execution Graph、Review、worktree、补偿 Plan 和 stable 的设计意图，参见[核心概念](concepts.zh-CN.md)。
+
+---
+
+## 1. 安装
 
 ### Windows
+
+在 PowerShell 中执行：
 
 ```powershell
 irm https://raw.githubusercontent.com/6ixGODD/mine-is-not-everyones/master/scripts/bootstrap.ps1 | iex
@@ -12,18 +18,56 @@ irm https://raw.githubusercontent.com/6ixGODD/mine-is-not-everyones/master/scrip
 
 ### macOS / Linux
 
+在终端中执行：
+
 ```sh
 curl -fsSL https://raw.githubusercontent.com/6ixGODD/mine-is-not-everyones/master/scripts/bootstrap.sh | sh
 ```
 
-安装完成后重新打开终端，然后确认二进制和 Agent 集成状态：
+安装完成后，重新打开终端，验证安装是否成功：
 
 ```sh
 mine --version
+```
+
+然后安装 Agent 集成：
+
+```sh
+mine setup
+```
+
+查看当前集成状态：
+
+```sh
 mine agent status
 ```
 
-`mine setup` 管理机器级的 Claude Code、Codex、Pi 和 OpenCode 集成。以后要新增或修复某个 Agent 集成时，可以重新运行它。
+MINE 当前支持 Claude Code、Codex、Pi 和 OpenCode。
+
+对于支持 MCP 的客户端，mine setup 会注册本地 mine mcp serve；当 MCP 不可用时，Skill 会自动回退到 JSON CLI 模式。Pi
+的最小核心本身不包含 MCP，因此可以直接使用 Skills + CLI 完成全部操作。
+
+### 安装指定版本
+
+bootstrap 默认安装最新 Release。如需安装指定版本，请使用`MINE_REF`。
+
+例如，安装 `v0.1.4`：
+
+#### Windows
+
+```powershell
+$env:MINE_REF = "v0.1.4"
+irm https://raw.githubusercontent.com/6ixGODD/mine-is-not-everyones/master/scripts/bootstrap.ps1 | iex
+```
+
+#### macOS / Linux
+
+```sh
+MINE_REF=v0.1.4 \
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/6ixGODD/mine-is-not-everyones/master/scripts/bootstrap.sh)"
+```
+
+---
 
 ## 2. 初始化仓库
 
@@ -33,180 +77,263 @@ mine agent status
 mine init
 ```
 
-这一步建立 MINE 的仓库状态：`.mine/config.toml`、受管理的 `docs/design/` 命名空间，以及仓库治理规则。它不会替你设计系统，也不会实现功能。
+一个仓库通常只需要初始化一次。
 
-如果仓库原本已经有一个与 MINE 无关的 `docs/design/`，`mine init` 会先把它保存到带时间戳的本地备份，再创建 MINE 自己的 Design 根目录。
+`mine init` 会建立 MINE 所需的仓库状态和 `docs/design/`，但不会替你设计系统或修改业务代码。
 
-## 3. 选择起点
+---
 
-```mermaid
-flowchart TD
-    I[mine init] --> Q{现在是否已有可信的 MINE Design?}
-    Q -->|没有，已有代码| S[mine-sync]
-    Q -->|没有，新需求| A[mine-arch]
-    Q -->|有| C{这次要做什么?}
-    S --> A
-    C -->|改变工程行为| A
-    C -->|只做编辑性维护| M[直接修改]
-    A --> P[mine-plan-create]
-```
+## 3. 开始一次工程变更
 
-### 已有代码库：先建立基线
-
-代码已经存在，但 Design 还不能准确描述它时，用 `mine-sync`：
+日常工作主要通过以下五个 Agent Skill 完成：
 
 ```text
-mine-sync 同步认证与授权子系统
+mine-arch
+mine-sync
+mine-plan-create
+mine-plan-exec
+mine-plan-review
 ```
 
-大型仓库建议明确范围。无范围的 sync 可能会广泛探索仓库，因为它需要从代码、测试、配置和其他证据中重建当前系统。
+需要说明的是，这些名称指的是 **Agent Skill**，而非 `mine` CLI 的子命令。不同 Agent 的调用语法存在差异，请以所使用的 Agent
+的实际调用方式为准。
 
-基线可信后，再描述你真正要做的变更：
+以下列举几种常见 Agent 的调用形式：
+
+**Codex：**
 
 ```text
-mine-arch 增加 Passkey 登录，并保留现有 session 模型。
+$mine-arch ...
 ```
 
-### 新工作：定义目标
-
-新仓库，或者已有仓库里准备做新的架构变更时：
+**Claude Code（通过 Marketplace 安装的插件）：**
 
 ```text
-mine-arch 构建一个支持导入、导出和撤销的本地任务管理 CLI。
+/mine:mine-arch ...
 ```
 
-`mine-arch` 修改的是目标 Design，不负责实现。
+**Pi：**
 
-### 小型编辑性维护
+```text
+/skill:mine-arch ...
+```
 
-错别字、翻译、文字整理、坏链接，或其他结果明确且不改变行为的修改，不需要为了形式再创建 Plan。直接修改、做相关校验、正常提交即可。
+**其他 Agent：**
 
-如果文档修改本身改变或建立了行为、架构、CLI 语义、Skill 行为、发布规则、安全边界或其他持久工程契约，那它就不再是编辑性维护，应回到正常 MINE 流程。
+```text
+/mine-arch ...
+```
 
-## 4. 把 Design 变成可执行工作
+上述示例均以 `mine-arch` 为代表，其余四个 Skill 的调用方式遵循相同规则，只需将 Skill 名称替换为对应的 `mine-sync`、
+`mine-plan-create`、`mine-plan-exec` 或 `mine-plan-review` 即可。
 
-Design 已经明确后：
+## 4. 创建 Plan
+
+Design 明确后：
+
+```text
+mine-plan-create <需要规划的范围>
+```
+
+例如：
+
+```text
+mine-plan-create 将刚才确定的 Passkey 登录改动整理为执行计划。
+```
+
+明确的 scope 会作为本次规划边界。`mine-plan-create` 会围绕这一范围检查相关 Design、代码、测试、依赖和成熟实践，并创建一个或多个可执行
+Plan。
+
+如果直接调用：
 
 ```text
 mine-plan-create
 ```
 
-它会创建临时开发工作区，并生成一个或多个 Plan。Plan 是实现契约，不是进度笔记。
+而不指定 scope，Skill 会自行从 Design、Execution Graph 和仓库状态中寻找下一批需要规划的工作，因此通常会进行范围更广的探索。
 
-正常情况下，你不需要手动编辑 execution graph，也不需要自己处理 revision。那些机械状态由 MINE 管理。
+如果规划过程中发现当前 Design 不足以支撑实现，`mine-plan-create` 可以主动调用 `mine-arch` 更新 Design，然后继续规划。用户通常不需要手工切换
+Skill。
 
-## 5. 执行和审查 Plan
+查看当前可执行 Plan：
 
-对每个已经 READY 的 Plan：
+```sh
+mine graph ready
+```
+
+查看某个 Plan 的详情：
+
+```sh
+mine plan show --id <id>
+```
+
+---
+
+## 5. 执行和 Review
+
+对处于 READY 状态的 Plan：
 
 ```text
 mine-plan-exec <Plan 路径>
 ```
 
-Implementation Agent 修改 Plan 范围内的文件、执行相关检查、提交代码，并停在 `IMPLEMENTED`。它不能接受自己的工作。
+执行完成后，Plan 进入：
 
-换一个独立审查会话：
+```text
+IMPLEMENTED
+```
+
+然后在 **独立的 Agent session** 中运行：
 
 ```text
 mine-plan-review <Plan 路径>
 ```
 
-Reviewer 独立检查实现和证据。如果 accepted Design 已经能唯一确定正确答案，Reviewer 可以做局部修正；如果问题意味着核心方案、范围或 Design 需要变化，则拒绝当前 Plan，并产生后续工作。
+**不要**在刚刚执行 `mine-plan-exec` 的同一个上下文中继续 Review。
 
-```mermaid
-flowchart LR
-    R[READY] --> E[mine-plan-exec]
-    E --> I[IMPLEMENTED]
-    I --> V[mine-plan-review]
-    V -->|接受| A[ACCEPTED]
-    V -->|实质问题| X[REJECTED / 后续工作]
-    A --> N{还有 READY Plan?}
-    N -->|有| E2[执行下一个 Plan]
-    N -->|没有| F[最终 sync]
+可以使用：
+
+* 同一种 Agent 的两个独立 session；
+* 两种不同 Agent。
+
+例如：
+
+```text
+Codex session A
+    → mine-plan-exec
+
+Codex session B
+    → mine-plan-review
 ```
 
-重复这个过程，直到 execution graph 进入终态，计划中的工作全部完成并被接受。
+或者：
 
-## 6. 发布收口
+```text
+Claude Code
+    → mine-plan-exec
 
-发布分成两个明确阶段，因为它们回答的是两个不同问题。
+Codex
+    → mine-plan-review
+```
 
-### Phase A：Design 是否已经描述了最终真正构建出来的东西？
+Review 可能产生三种结果：
 
-最后一个 Plan 被接受并集成后：
+* **ACCEPTED**：实现被接受并集成；
+* **局部修正后 ACCEPTED**：Reviewer 可以直接修复明确、局部且不改变工程契约的问题；
+* **REJECTED**：当前 Plan 无法接受，通常会创建补偿 Plan，并更新受影响的后续依赖。
+
+如果 REJECTED 的根因需要修改 Design，Reviewer 可以主动调用 `mine-arch`。用户通常无需手工修改 Execution Graph。
+
+---
+
+## 6. 并行执行
+
+如果存在多个彼此独立的 READY Plan，可以并行执行。
+
+MINE 会使用独立 branch / worktree 隔离不同 Plan，例如：
+
+```text
+dev
+├── plan/01-api       → worktree A
+├── plan/02-storage   → worktree B
+└── plan/03-ui        → worktree C
+```
+
+通常不需要手工：
+
+* 创建 Plan branch；
+* 创建 worktree；
+* 修改 Execution Graph；
+* 管理 graph revision；
+* 管理 report 路径；
+* 将 accepted Plan 手工集成到 `dev`。
+
+这些状态由 MINE 和对应 Skill 自动管理。
+
+---
+
+## 7. 发布
+
+所有计划工作完成后，先执行 Final Sync：
 
 ```text
 mine-sync prepare this repository for stable release
 ```
 
-这一步把最终实现重新调和进持久 Design，并记录 fresh synchronization evidence。
+它会根据最终代码重新核对 `docs/design/`。
 
-### Phase B：这个精确的产品状态是否可以进入 stable？
-
-然后运行：
+然后在独立 Review 上下文中执行：
 
 ```text
 mine-plan-review complete release closure
 ```
 
-Reviewer 会验证 freshness 和 release gates，构造并验证 stable candidate，从 stable tree 中移除临时 Plan 状态，完成本地 curated integration，并清理 MINE 管理的本地开发分支。
+Release Closure 会完成本地发布收口，包括：
 
-它不会替你 push 或做远程发布。远程 mutation 仍然是用户显式决定。
+* 验证 Execution Graph 和 release gates；
+* 确认最终 Design 已同步；
+* 构造并验证 stable candidate；
+* 检查产品代码中是否残留当前开发周期的临时 Plan 引用；
+* 移除 `docs/plan/` 和执行报告；
+* 将最终状态集成到 stable；
+* 清理 MINE 管理的本地临时 branch / worktree。
 
-## 7. MINE 工作期间，仓库里发生了什么
+MINE **不会**主动执行：
 
-开发周期中：
+* push；
+* Git tag；
+* GitHub Release；
+* package publish；
+* 其他远程发布操作。
 
-```text
-stable (main/master)
-    │
-    └── dev
-         ├── docs/plan/
-         ├── plan/01-...
-         ├── plan/02-...
-         └── 已接受的工作逐步汇总到这里
-```
+这些操作由用户决定。
 
-发布收口时，stable 通过 curated integration 得到最终接受的产品状态。临时 Plan 历史和 `docs/plan/` 不进入 stable history。
+---
 
-`docs/design/` 不一样：它是持久工程知识，会跟着产品留在 stable。
+## 8. 查看状态和诊断
 
-## 8. 诊断与维护命令
-
-如果问题发生在机器安装或 Agent 集成，用机器级命令：
+### Agent 集成
 
 ```sh
 mine agent status
 mine setup
-mine update
-mine uninstall
 ```
 
-如果问题发生在某个已经初始化的仓库里，用仓库级诊断：
+### 当前仓库
 
 ```sh
 mine status
 mine doctor
+```
+
+### Design
+
+```sh
 mine design status
 mine design validate
+```
+
+### Execution Graph
+
+```sh
 mine graph status
 mine graph ready
+mine graph wave
+mine graph validate
+```
+
+### Plan
+
+```sh
 mine plan show --id <id>
+```
+
+### 发布检查
+
+```sh
 mine release --format json
 ```
 
-`mine agent status` 和 `mine doctor` 本来就回答不同问题：前者只看机器级 Agent 集成，后者还会检查当前仓库。
+当命令执行失败时，优先查看 CLI 返回的 human 或 JSON 格式的诊断信息。
 
-命令失败时，优先看它实际给出的 human/JSON 诊断，而不是先去寻找一个泛泛的“故障排查套路”。CLI 自己才是最具体的诊断入口。
-
-## 9. 平时不需要自己碰的东西
-
-普通用户很少需要手工操作底层 Plan transition 命令、直接编辑 graph 文件、管理 report 路径、自己构造 stable candidate，或者手动把 `plan/*` 集成进 `dev`。这些接口主要是为了让 Skill 做确定性状态转换。
-
-日常工作流可以记成：
-
-```text
-init → arch/sync → plan → execute → review → final sync → release closure
-```
-
-想进一步理解为什么 MINE 要把 Design、Plan、Review 和 Stable 分开，继续看[核心概念](concepts.zh-CN.md)。
+关于各机制的设计意图，参见[核心概念](concepts.zh-CN.md)。

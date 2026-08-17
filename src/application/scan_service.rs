@@ -47,6 +47,11 @@ fn is_excluded(rel: &str) -> bool {
     if rel.starts_with("docs/plan/")
         || rel.starts_with("docs/design/")
         || rel.starts_with("docs/design-backup-")
+        // User-facing documentation: concepts and user guides explain the
+        // Plan mechanism itself and legitimately use `Plan NN` as teaching
+        // examples; they are not implementation provenance.
+        || rel.starts_with("docs/concepts")
+        || rel.starts_with("docs/user-guide")
         || rel == "docs/README.md"
         || rel == "README.md"
         || rel == "README.zh-CN.md"
