@@ -1,276 +1,212 @@
 # MINE User Guide
 
-## Quick start
+This guide follows the order in which you actually use MINE. If you only want the mental model, read [Concepts](concepts.md).
 
-MINE is an opinionated, document-driven engineering workflow that runs inside your coding agent. Normal operation follows this mental model:
+## 1. Install MINE
 
-```text
-Install (bootstrap + mine setup)
-  ↓
-mine init                      once per repository
-  ↓
-mine-arch                     new requirement / target design
-or
-mine-sync                     existing repository / code baseline
-  ↓
-mine-plan-create              turn a Design change into a Plan
-  ↓
-mine-plan-exec                implement one Plan
-  ↓
-mine-plan-review              independent review
-  ↓
-repeat as needed
-  ↓
-mine-sync prepare this repository for stable release
-  ↓
-mine-plan-review complete release closure
+### Windows
+
+```powershell
+irm https://raw.githubusercontent.com/6ixGODD/mine-is-not-everyones/master/scripts/bootstrap.ps1 | iex
 ```
 
-You do **not** need to manually manage execution-graph revisions, report paths, temporary `plan/*` branches, `dev` integration mechanics, or candidate construction. Those are MINE's internal workflow machinery; the Skills and CLI handle them.
+### macOS / Linux
 
-**Lightweight maintenance:** you do not need a Plan for every edit. Typo fixes, prose cleanup, translation, broken links, README improvements, and other clearly behavior-preserving editorial maintenance can be done directly (still respecting `AGENTS.md`). Behavior-changing engineering work uses MINE.
-
-## What the user must remember
-
-For normal use, the repository owner needs only one CLI command and five agent Skills:
-
-```text
-mine init
-
-mine-arch
-mine-sync
-mine-plan-create
-mine-plan-exec
-mine-plan-review
+```sh
+curl -fsSL https://raw.githubusercontent.com/6ixGODD/mine-is-not-everyones/master/scripts/bootstrap.sh | sh
 ```
 
-The remaining CLI surface exists mainly for Skills, diagnostics, and advanced inspection.
+Reopen the terminal, then check the binary and Agent integrations:
 
-## `mine init` is setup, not execution
+```sh
+mine --version
+mine agent status
+```
 
-Run once at a repository root:
+`mine setup` manages machine-level integration with Claude Code, Codex, Pi, and OpenCode. Run it again when you want to add or repair an Agent integration.
 
-```bash
+## 2. Initialize a repository
+
+From the Git repository root:
+
+```sh
 mine init
 ```
 
-It performs deterministic setup only:
+This establishes MINE's repository state: `.mine/config.toml`, the managed `docs/design/` namespace, and repository governance. It does not design the system or implement features.
 
-- discovers the Git root and stable branch;
-- creates `.mine/config.toml` and ignored runtime directories;
-- installs or validates the MINE design namespace marker;
-- creates an empty modular `docs/design/` scaffold when absent;
-- creates or updates MINE governance in `AGENTS.md`;
-- configures supported agent integration where authorized;
-- initializes the MINE code-repository version to the existing managed value, an explicit repository version when reliable, or `0.1.0` otherwise;
-- validates the resulting setup.
+If an unrelated `docs/design/` already exists, `mine init` preserves it in a timestamped local backup and creates MINE's managed Design root.
 
-It does **not** scan source code, write architecture, create `docs/plan/`, create development branches, invoke an agent, write business code, commit, merge, or publish.
+## 3. Choose your starting point
 
-## Design namespace handling
+```mermaid
+flowchart TD
+    I[mine init] --> Q{Do you already have a trustworthy MINE Design?}
+    Q -->|No, existing codebase| S[mine-sync]
+    Q -->|No, new requirement| A[mine-arch]
+    Q -->|Yes| C{What are you doing?}
+    S --> A
+    C -->|Change engineering behavior| A
+    C -->|Editorial maintenance only| M[Edit directly]
+    A --> P[mine-plan-create]
+```
 
-MINE owns this path:
+### Existing codebase: establish a baseline
+
+Use `mine-sync` when the code already exists but the Design does not yet describe it accurately:
 
 ```text
-docs/design/
+mine-sync synchronize the authentication subsystem
 ```
 
-A managed tree contains:
+Scope large repositories. An unscoped sync may inspect broadly because it has to reconstruct the current system from repository evidence.
+
+After the baseline is trustworthy, describe the change you want:
 
 ```text
-docs/design/.mine-design.toml
+mine-arch Add Passkey login and preserve the existing session model.
 ```
 
-If a repository already stores unrelated documentation in `docs/design/`, `mine init` moves the existing directory aside to `docs/design-backup-<UTC timestamp>/` and creates a fresh MINE-managed design root. The legacy contents are preserved in the backup; MINE does not guess how to migrate arbitrary legacy layouts, but it does not abort the initialization either.
+### New work: define the target
 
-## New repository workflow
-
-```bash
-mine init
-```
-
-Then open Claude Code, Codex, Pi, or OpenCode and invoke:
+For a new repository or a new architectural change:
 
 ```text
-mine-arch <requirements>
+mine-arch Build a local task-management CLI with import, export, and undo.
 ```
 
-`mine-arch` scans the relevant repository state, researches external contracts, and creates or updates modular target design. It may create the managed `dev` branch under the standing Git authorization defined by MINE governance.
+`mine-arch` updates the target Design. It does not implement the change.
 
-When design is ready:
+### Small editorial maintenance
+
+A typo, translation, prose cleanup, broken link, or other unambiguous behavior-preserving edit does not need a Plan. Change it directly, validate what is relevant, and commit it normally.
+
+If the edit changes or establishes behavior, architecture, CLI semantics, Skill behavior, release rules, security boundaries, or another durable engineering contract, it is not editorial maintenance; use the normal MINE flow.
+
+## 4. Turn Design into executable work
+
+When the Design is ready:
 
 ```text
 mine-plan-create
-mine-plan-exec <plan path>
-mine-plan-review <plan path>
 ```
 
-Repeat execution and review until every plan is accepted.
+This creates the temporary development workspace and one or more Plans. A Plan is an implementation contract, not a progress note.
 
-## Existing repository workflow
+You normally do not edit the execution graph or choose graph revisions yourself. MINE manages those mechanics.
 
-### 1. Resolve the namespace
+## 5. Execute and review Plans
 
-If `docs/design/` contains legacy non-MINE documentation, `mine init` backs it up to `docs/design-backup-<timestamp>/` and creates a fresh managed root.
-
-### 2. Initialize MINE
-
-```bash
-mine init
-```
-
-### 3. Build a code-accurate design baseline
-
-Invoke:
+For each ready Plan:
 
 ```text
-mine-sync
+mine-plan-exec <Plan path>
 ```
 
-For large repositories, provide a scope:
+The implementation Agent changes the scoped files, runs the relevant checks, commits its work, and finishes at `IMPLEMENTED`. It cannot accept its own work.
+
+Use another review session:
 
 ```text
-mine-sync synchronize the payment domain, order persistence, and webhook delivery paths
+mine-plan-review <Plan path>
 ```
 
-The agent begins with user-named paths, services, packages, symbols, or subsystems, then follows their direct dependencies and externally visible contracts.
+The Reviewer independently inspects the implementation and its evidence. It may make narrow corrections when the accepted Design already determines the right answer; otherwise it rejects the Plan and the workflow creates follow-up work.
 
-With no scope, the agent is authorized to explore broadly until it can represent the repository accurately. This may be expensive. MINE treats an unscoped request as the user's acceptance of that cost.
-
-### 4. Evolve the architecture
-
-After the baseline reflects current code:
-
-```text
-mine-arch <new requirements>
+```mermaid
+flowchart LR
+    R[READY] --> E[mine-plan-exec]
+    E --> I[IMPLEMENTED]
+    I --> V[mine-plan-review]
+    V -->|accept| A[ACCEPTED]
+    V -->|material problem| X[REJECTED / follow-up]
+    A --> N{More ready Plans?}
+    N -->|yes| E2[execute next Plan]
+    N -->|no| F[final sync]
 ```
 
-`mine-arch` is requirement-first. It can intentionally make the target design differ from current implementation. `mine-plan-create` then plans the transition.
+Repeat until the execution graph is terminal and the intended work is accepted.
 
-## What `mine-sync` does
+## 6. Close a release
 
-When a managed design tree exists, `mine-sync`:
+Release closure has two explicit steps because they answer different questions.
 
-1. creates `docs/design-backup-<timestamp>/`;
-2. copies the current design tree without following repository-external symlinks or junctions;
-3. writes `*` to the backup directory's `.gitignore` so the backup remains local;
-4. inventories the requested code scope, or explores freely when no scope is provided;
-5. compares code, schemas, configuration, runtime behavior, tests, and public contracts with design;
-6. applies this authority order:
-   - explicit current user instructions and protected design decisions;
-   - current observable repository behavior;
-   - existing design only where code does not determine the answer;
-7. updates the modular design tree and indexes;
-8. reports suspicious code, uncertainty, and incomplete coverage without pretending they do not exist;
-9. validates links, markers, document sizes, and design ownership.
+### Phase A: does Design describe what was actually built?
 
-When no meaningful design exists, `mine-sync` creates a descriptive baseline from the current codebase.
-
-`mine-sync` does not modify business code unless the user separately requests implementation work.
-
-## Temporary branches and plans
-
-MINE uses:
-
-```text
-stable branch              released code and docs/design only
-dev                        temporary integration branch
-plan/<id>-<slug>            temporary implementation branch
-docs/plan/                  temporary plan workspace
-```
-
-The repository owner grants MINE Skills standing authorization to:
-
-- create and switch the managed `dev` and `plan/*` branches;
-- commit files belonging to the active plan;
-- merge an independently accepted plan branch into `dev`;
-- delete an accepted, merged local `plan/*` branch;
-- perform the final squash or curated release integration when every gate passes;
-- delete the temporary local `dev` branch after release.
-
-The authorization does not include arbitrary branches, force push, `reset --hard`, `git clean`, blind stash, public-history rewriting, or discarding unrelated changes.
-
-The user does not manually provide a development-cycle version. `mine-plan-create` opens an internal workspace with a generated identifier. Repository version is decided at release time from accepted changes and existing MINE version state.
-
-## Release closure
-
-Release closure has two phases owned by different actors.
-
-### Phase A - final design reconciliation (repository owner)
-
-After all plans are accepted and integrated into `dev`, invoke a final full-repository sync:
+After the last Plan is accepted and integrated:
 
 ```text
 mine-sync prepare this repository for stable release
 ```
 
-This reconciles accepted implementation into `docs/design/`, resolves or reports every incomplete area, and validates the complete repository. It is a separate, deliberate session.
+This reconciles the final implementation back into durable Design and records fresh synchronization evidence.
 
-### Phase B - mechanical release closure (mine-plan-review)
+### Phase B: can this exact product state become stable?
 
-After the final sync, the reviewer performs the mechanical closure. Invoke the Skill in release-closure mode:
+Then run:
 
 ```text
 mine-plan-review complete release closure
 ```
 
-This mode does not require a Plan path and does not re-accept an already-accepted Plan. It enters only when every Plan is terminal and the final sync has completed; a missing or stale sync stops closure explicitly. The closure steps are:
+The Reviewer verifies freshness and release gates, constructs and validates the stable candidate, removes temporary Plan state from the stable tree, performs the local curated integration, and cleans up MINE-managed local development branches.
 
-1. confirm the final `mine-sync` has completed (the reviewer does not run it);
-2. run `mine release --format json` preflight plus the repository's own decisive validation;
-3. determine the next MINE code-repository version;
-4. safely purge the MINE-owned `docs/plan/` workspace;
-5. verify the stable release tree contains no plan files or local backups;
-6. integrate accepted state into the stable branch without importing temporary plan history;
-7. delete temporary managed branches.
+It does not push or publish remotely. Those actions remain explicit user decisions.
 
-The reviewer never pushes, creates a remote release, or publishes a package. Remote publication remains explicitly outside MINE's authority.
+## 7. Understand the repository while MINE is active
 
-The stable tree retains code and `docs/design/`, not the process used to create them.
+During a development cycle:
 
-## Installation and lifecycle
-
-After bootstrap installation (see the README), these CLI commands manage the MINE lifecycle:
-
-```bash
-mine --version          # verify the installed binary
-mine agent status       # machine-level: list managed agent integrations and health
-mine setup              # machine-level: (re)install MINE into coding agents (interactive)
-mine setup --agents claude-code,codex --yes  # non-interactive, specific agents
-mine update             # machine-level: update the binary to the latest release
-mine uninstall          # machine-level: remove MINE from all agents and this machine
+```text
+stable (main/master)
+    │
+    └── dev
+         ├── docs/plan/
+         ├── plan/01-...
+         ├── plan/02-...
+         └── accepted work accumulates here
 ```
 
-### Machine-level vs repository-level
+At release closure, stable receives the accepted product state through curated integration. Temporary Plan history and `docs/plan/` do not become part of stable history.
 
-MINE has three distinct levels of operation; do not confuse them:
+`docs/design/` is different: it is durable and remains with the product.
 
-- **`mine setup`** - **machine-level** Agent integration. Installs Skills and MCP configuration into coding-agent client directories. Run once per machine; rerun to add or remove integrations.
-- **`mine init`** - **repository-level** initialization. Creates `.mine/config.toml`, the design namespace, and governance at a repository root. Run once per repository.
-- **`mine agent status`** - **machine-level** status. Lists the managed Agent installations and their health, independent of any repository.
-- **`mine doctor`** - **repository-aware** diagnostics. Full health check of an initialized MINE repository: `.mine/config.toml`, design marker/index, execution graph, Git branch, and (with `--agents`) per-Agent installation state. Run it inside a repository; it is not a machine-level command.
+## 8. Diagnostics and maintenance commands
 
-`mine doctor --agents all` is a repository-aware diagnostic for an initialized repository, not a global post-installation check. After a fresh machine-level install, use `mine agent status` to verify integrations.
+Use machine-level commands when the problem is installation or Agent integration:
 
-Non-interactive flags: `--agents <list>` (comma-separated slugs), `--yes` (skip prompts), `--config-root <path>` (isolated install for CI/tests).
+```sh
+mine agent status
+mine setup
+mine update
+mine uninstall
+```
 
-## Manual inspection commands
+Use repository diagnostics inside an initialized repository:
 
-These are useful but not required for normal flow. All of these accept `--format json` for stable machine-consumable envelopes (and `--repo <path>` to target a different repository root); this guide shows the human form.
-
-```bash
+```sh
 mine status
 mine doctor
 mine design status
 mine design validate
 mine graph status
 mine graph ready
-mine graph wave
 mine plan show --id <id>
+mine release --format json
 ```
 
-Agent-facing mutations go through the accepted `mine` CLI subcommands (`mine plan add|start|implemented|accept|reject`, `mine graph render`, `mine workspace open|status|close`, `mine design backup|validate|status`, `mine repository version show|suggest|set`), all with `--format json`. When a typed MCP bridge is accepted, prefer it and fall back to `--format json` CLI. Never edit `docs/plan/execution-graph.toml` or `docs/plan/execution-graph.md` directly.
+`mine agent status` and `mine doctor` intentionally answer different questions: the first is about machine-level Agent installation; the second evaluates the current repository as well.
 
-## Supported clients
+When a command fails, start with its concrete human or JSON output rather than looking for a generic troubleshooting recipe. The CLI is the authoritative diagnostic surface.
 
-Only Claude Code, Codex, Pi, and OpenCode are supported. Other environments are intentionally excluded from MINE's compatibility burden.
+## 9. What you usually do not need to touch
+
+Normal users should rarely need to operate the low-level Plan transition commands, manually edit graph files, manage report paths, construct stable candidates, or hand-integrate `plan/*` branches. Those interfaces exist so Skills can make deterministic transitions.
+
+The everyday workflow is:
+
+```text
+init → arch/sync → plan → execute → review → final sync → release closure
+```
+
+For the reasoning behind that workflow, continue with [MINE Concepts](concepts.md).
