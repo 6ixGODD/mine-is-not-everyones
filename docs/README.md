@@ -9,13 +9,17 @@ If you are trying MINE on a project, start with the User Guide. You usually do n
 
 ## User documentation
 
+English:
+
 - [User Guide](user-guide.md) — installation, repository setup, daily workflow, review, and release
 - [Concepts](concepts.md) — the mental model behind Design, Plans, branches, independent review, and release closure
+- [Troubleshooting](troubleshooting.md) — recovery from concrete error states
 
-Simplified Chinese:
+简体中文：
 
 - [用户指南](user-guide.zh-CN.md)
 - [核心概念](concepts.zh-CN.md)
+- [故障排查](troubleshooting.zh-CN.md)
 
 ## Internal Design
 
@@ -23,15 +27,15 @@ Simplified Chinese:
 
 `docs/design/` stays on stable branches because it describes accepted engineering behavior. `docs/plan/` is different: it is temporary execution state created during a development cycle and removed during release closure.
 
-## Where to look for a problem
+## When something fails
 
-For normal usage questions, first use:
+Start with the diagnostic surface closest to the failure:
 
 ```sh
 mine --help
 mine <command> --help
 mine agent status
-mine doctor
+mine doctor --format json
 ```
 
-The User Guide explains when each diagnostic surface is appropriate. If MINE reports an error, prefer the concrete diagnostic and exit result over generic documentation prose.
+Then use [Troubleshooting](troubleshooting.md) only for recovery cases where the next action is not obvious from the command output.
