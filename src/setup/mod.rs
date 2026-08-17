@@ -240,8 +240,7 @@ fn refresh_installed_after_update(args: &UpdateArgs) -> (Vec<String>, Vec<String
         Err(e) => return (Vec::new(), vec![format!("refresh spawn failed: {e}")]),
     };
     let stdout = String::from_utf8_lossy(&out.stdout);
-    let report: Option<crate::application::agent_service::RefreshReport> =
-        serde_json::from_str(stdout.trim()).ok();
+    let report = parse_refresh_report(stdout.trim());
     match report {
         Some(r) => (r.refreshed, r.errors),
         None => (
@@ -354,3 +353,39 @@ pub struct UninstallReport {
 
 // Re-export Env for submodules.
 pub use crate::agent_setup::targets::Env as SetupEnv;
+
+/// Parses the refresh child's JSON output into a `RefreshReport`. The child
+/// prints a full envelope (`{"command":"__refresh-skills","data":{...},
+/// "ok":true}`), so the report lives under `data`; a bare `RefreshReport`
+/// object is also accepted for robustness.
+fn parse_refresh_report(stdout: &str) -> Option<crate::application::agent_service::RefreshReport> {
+    let value: serde_json::Value = serde_json::from_str(stdout).ok()?;
+    let data = value.get("data").cloned().unwrap_or(value);
+    serde_json::from_value(data).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_refresh_report;
+
+    #[test]
+    fn parses_envelope_with_data() {
+        let out = r#"{"command":"__refresh-skills","data":{"mine_version":"0.1.6","refreshed":["claude-code","pi"],"errors":[]},"ok":true}"#;
+        let r = parse_refresh_report(out).expect("envelope must parse");
+        assert_eq!(r.mine_version, "0.1.6");
+        assert_eq!(r.refreshed, vec!["claude-code".to_string(), "pi".to_string()]);
+        assert!(r.errors.is_empty());
+    }
+
+    #[test]
+    fn parses_bare_report() {
+        let out = r#"{"mine_version":"0.1.6","refreshed":[],"errors":["x"]}"#;
+        let r = parse_refresh_report(out).expect("bare report must parse");
+        assert_eq!(r.errors, vec!["x".to_string()]);
+    }
+
+    #[test]
+    fn rejects_garbage() {
+        assert!(parse_refresh_report("not json").is_none());
+    }
+}
