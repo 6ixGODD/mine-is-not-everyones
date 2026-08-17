@@ -19,4 +19,5 @@ pub mod graph_service;
 pub mod init_service;
 pub mod plan_service;
 pub mod release_service;
+pub mod scan_service;
 pub mod workspace_service;

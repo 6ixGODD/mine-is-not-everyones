@@ -109,6 +109,10 @@ pub fn handle(
             "serve" => mcp_serve(parsed, rest),
             _ => Err(HandlerError::usage("unknown mcp subcommand: serve")),
         },
+        "scan" => match sub {
+            "plan-refs" => scan_plan_refs(parsed, rest),
+            _ => Err(HandlerError::usage("scan expects a subcommand: plan-refs")),
+        },
         "release" => release_preflight(parsed, rest),
         "setup" => setup(parsed, rest),
         "update" => update(parsed, rest),
@@ -1443,8 +1447,50 @@ fn agent_config(_parsed: &crate::cli::ParsedArgs, rest: &[String]) -> HandlerRes
 }
 
 // ----------------------------------------------------------------------------
-// Release preflight and dist sync/verify
+// Release preflight, stale-plan-reference scan, and dist sync/verify
 // ----------------------------------------------------------------------------
+
+fn scan_plan_refs(parsed: &crate::cli::ParsedArgs, rest: &[String]) -> HandlerResult {
+    let ctx = build_context(&parsed.global).map_err(ctx_err)?;
+    let (flags, _pos) = parse_flags(rest);
+    let check = flag(&flags, "check").is_some();
+    let result =
+        crate::application::scan_service::scan_plan_refs(&ctx.repo_root, check).map_err(ctx_err)?;
+    let mut data = serde_json::to_value(&result).unwrap_or(Value::Null);
+    if let Some(obj) = data.as_object_mut() {
+        obj.insert("check".to_string(), json!(check));
+        obj.insert("clean".to_string(), json!(result.findings.is_empty()));
+    }
+    let env = envelope_for("scan.plan-refs", Some(&ctx.repo_root)).with_data(data);
+    let mut lines = vec![
+        HumanLine::Field {
+            key: "  files_scanned".to_string(),
+            value: result.files_scanned.to_string(),
+        },
+        HumanLine::Field {
+            key: "  findings".to_string(),
+            value: result.findings.len().to_string(),
+        },
+    ];
+    for f in &result.findings {
+        lines.push(HumanLine::Field {
+            key: format!("  {}", f.file),
+            value: format!("{}: {}", f.line, f.content),
+        });
+    }
+    if check && !result.findings.is_empty() {
+        return Err(HandlerError {
+            code: "MINE_SCAN_PLAN_REFS",
+            message: format!(
+                "{} unexempted plan reference(s) found (--check)",
+                result.findings.len()
+            ),
+            exit_code: crate::output::exit_code::VALIDATION,
+            details: serde_json::to_value(&result).unwrap_or(Value::Null),
+        });
+    }
+    Ok((env, lines))
+}
 
 fn release_preflight(parsed: &crate::cli::ParsedArgs, rest: &[String]) -> HandlerResult {
     let ctx = build_context(&parsed.global).map_err(ctx_err)?;

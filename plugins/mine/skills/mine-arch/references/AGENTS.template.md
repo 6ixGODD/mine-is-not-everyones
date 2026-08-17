@@ -36,6 +36,10 @@ This is a new project unless the user explicitly states otherwise. When a later 
 - Resolve bounded local implementation decisions using architecture, official documentation, and repository convention; record them in the implementation report.
 - Preserve unrelated changes and stage only explicit in-scope files.
 
+## Lightweight maintenance
+
+MINE governs engineering change, not every repository edit. Direct, bounded, behavior-preserving maintenance (typo fixes, prose cleanup, translation, broken-link repair, README improvements, user-facing documentation additions, formatting-only documentation changes, examples/comments describing already-accepted behavior) may proceed without a MINE execution Plan when the correct result is unambiguous and no durable engineering contract changes. Such work still must respect this `AGENTS.md`, preserve unrelated changes, stage explicit files, run relevant validation, use normal commit discipline, and never silently change product behavior while claiming to be docs-only. Changes that alter or establish durable engineering behavior (business/runtime behavior, architecture, public API, CLI semantics, MCP contracts, Skill workflow, execution-graph/state-machine behavior, release behavior, branch lifecycle, persistence/schema/migration, security/privacy/authority boundaries, deployment/operational contracts, durable Design decisions) require the normal MINE lifecycle. A documentation file is not automatically lightweight maintenance: if it changes the authoritative contract rather than describing already-accepted behavior, it belongs in normal MINE governance.
+
 ## Parallel execution
 - Use MINE CLI/MCP to query and transition `docs/plan/execution-graph.toml`; treat the Markdown graph as generated read-only output. Use the plan's work-package DAG.
 - Parallel lanes require disjoint write scopes, one owner per shared file, explicit start gates, join gates, and integration ownership.

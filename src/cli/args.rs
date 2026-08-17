@@ -137,6 +137,11 @@ pub enum Commands {
     },
     /// Release preflight (validation only).
     Release,
+    /// Read-only validation scans.
+    Scan {
+        #[command(subcommand)]
+        action: ScanCmd,
+    },
     /// Run the MINE stdio MCP server.
     Mcp {
         #[command(subcommand)]
@@ -352,6 +357,16 @@ pub enum DistCmd {
     Sync,
     /// Verify distribution assets are in sync.
     Verify,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ScanCmd {
+    /// Scan tracked content for temporary historical Plan references.
+    PlanRefs {
+        /// Fail (exit 1) when unexempted findings exist (release gate).
+        #[arg(long)]
+        check: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]

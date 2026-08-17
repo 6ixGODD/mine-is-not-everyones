@@ -210,7 +210,9 @@ Try it in a recoverable repository: read the generated Design, inspect the Git h
 ## Documentation
 
 * [Documentation index](docs/README.md)
-* [User guide](docs/user-guide.md)
+* [User guide](docs/user-guide.md) · [用户指南](docs/user-guide.zh-CN.md)
+* [Concepts](docs/concepts.md) · [概念](docs/concepts.zh-CN.md)
+* [Troubleshooting](docs/troubleshooting.md) · [故障排查](docs/troubleshooting.zh-CN.md)
 * [Design index](docs/design/index.md)
 
 ## License

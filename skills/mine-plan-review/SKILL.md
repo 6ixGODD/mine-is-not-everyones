@@ -140,31 +140,28 @@ At minimum:
 
 ### Remove temporary-plan references before release closure
 
-Before the final stable-candidate integration, run the scanner bundled with this Skill against the repository under review:
+Before the final stable-candidate integration, run the native stale-plan-reference scan against the repository under review:
 
 ```text
-bash <installed Skill dir>/mine-plan-review/references/scan-plan-refs.sh --check
+mine scan plan-refs --check --format json
 ```
 
-The scanner lives next to this `SKILL.md` under `references/scan-plan-refs.sh` and is copied into every installer-managed Skill directory (Claude Code, Codex, Pi, OpenCode). **Resolve it from the Skill directory that actually loaded this SKILL.md** — never from a relative path inside the target repository (the target repository does not ship `references/scan-plan-refs.sh`).
+`mine scan plan-refs` is the **authoritative cross-platform scanner**: a native Rust implementation inside the `mine` executable with **no Bash, WSL, or Git Bash dependency**. It works on Windows without WSL, Windows without `bash` on PATH, Linux, and macOS. The release/review path never requires an external POSIX shell for this scan.
 
-**Resolution contract (executable):**
+Semantics (per `docs/design/interfaces/cli-contract.md` - "Stale-plan-reference scan"):
 
-1. Determine the absolute path of the `mine-plan-review/SKILL.md` file that is actually loaded for this session (the runtime that invoked this Skill knows the file it loaded; if the runtime exposes it, use that path directly).
-2. Take its parent directory as the Skill directory.
-3. Join: `<loaded-skill-directory>/references/scan-plan-refs.sh`.
-4. Run the scanner with the **target repository root as the current working directory** (the scanner internally resolves the target's Git toplevel, so it works from any subdirectory).
+- inspects **tracked** repository content (`git ls-files`), never an uncontrolled filesystem walk;
+- detects temporary historical Plan references such as `Plan NN`;
+- excludes temporary planning state and accepted documentation (`docs/plan/`, `docs/design/`, design backups, READMEs, fixture/testdata directories);
+- honors the `mine-release-allow-plan-reference:` exemption marker on the immediately preceding line;
+- reports exact `file:line` findings; never rewrites source;
+- `--check` exits non-zero when unexempted findings exist (release gate); without `--check` it prints findings and exits zero (repair mode);
+- supports `--repo` and `--format json`.
 
-The per-client locations below are typical install layouts for troubleshooting when the runtime does not expose the loaded path — they are NOT a substitute for the loaded-path derivation, and a custom `--config-root` (or any other install location) overrides them:
+It is layout-agnostic: it works for Go, Python, TypeScript, monorepo, and any other tracked layout.
 
-- Claude Code: `~/.claude/skills/mine-plan-review/references/scan-plan-refs.sh`
-- Codex: `~/.agents/skills/mine-plan-review/references/scan-plan-refs.sh`
-- Pi: `~/.pi/agent/skills/mine-plan-review/references/scan-plan-refs.sh`
-- OpenCode: `~/.config/opencode/skills/mine-plan-review/references/scan-plan-refs.sh`
+**Legacy Bash helper:** the repository previously shipped a Bash helper at `skills/mine-plan-review/references/scan-plan-refs.sh` (also copied into installer-managed Skill directories). It is retained **only** as a manual compatibility helper for Unix-only use and is not the authoritative implementation; the normal MINE release/review path uses `mine scan plan-refs`. If you encounter the helper in an installed Skill directory, do not treat its absence as a defect - the native CLI is authoritative. The target repository never needs a local `references/` directory for this check.
 
-**Fallback (stdin):** if the scanner file cannot be located from the loaded Skill directory or any typical layout, run the scanner's bundled source via stdin rather than guessing a path: the agent has this Skill's bundled `references/scan-plan-refs.sh` content available from the Skill package; pipe it to `bash` with the target repository as the working directory, e.g. `bash -s -- --check < <(cat "$SKILL_DIR/references/scan-plan-refs.sh")` (quoting per the host shell). The target repository never needs a local `references/` directory.
-
-The scanner is layout-agnostic: it scans all tracked files excluding `docs/design/`, `docs/plan/`, design backups, READMEs, and fixture/testdata directories, so it works for Go, Python, TypeScript, monorepo, and any other layout.
 
 This scans tracked implementation, test, workflow, Skill, and distribution assets while excluding temporary `docs/plan/` and design documentation. It rejects stale `Plan NN` references because stable behavior must be intelligible without the ephemeral planning history. Rewrite a historical comment as an enduring contract; for example:
 

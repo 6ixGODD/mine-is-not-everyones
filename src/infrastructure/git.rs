@@ -72,6 +72,33 @@ pub fn is_clean(repo_root: &Path) -> bool {
         .is_some_and(|s| s.is_empty())
 }
 
+/// Lists tracked files (repository-relative, forward slashes) via
+/// `git ls-files -z`. Returns an error when Git cannot be invoked (fail
+/// closed for release gates).
+pub fn list_tracked_files(repo_root: &Path) -> MineResult<Vec<String>> {
+    let output = Command::new(GIT)
+        .arg("-C")
+        .arg(repo_root)
+        .args(["ls-files", "-z"])
+        .output()
+        .map_err(|e| MineError::Io(std::io::Error::other(format!("git invoke failed: {e}"))))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+        return Err(MineError::Io(std::io::Error::other(format!(
+            "git ls-files failed: {stderr}"
+        ))));
+    }
+    let mut files = Vec::new();
+    for chunk in output.stdout.split(|b| *b == 0) {
+        if chunk.is_empty() {
+            continue;
+        }
+        let s = String::from_utf8_lossy(chunk).into_owned();
+        files.push(s.replace('\\', "/"));
+    }
+    Ok(files)
+}
+
 /// Returns `true` if a local branch named `name` exists.
 pub fn branch_exists(repo_root: &Path, name: &str) -> bool {
     run_git(

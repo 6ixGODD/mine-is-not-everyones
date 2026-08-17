@@ -1,5 +1,35 @@
 # MINE User Guide
 
+## Quick start
+
+MINE is an opinionated, document-driven engineering workflow that runs inside your coding agent. Normal operation follows this mental model:
+
+```text
+Install (bootstrap + mine setup)
+  ↓
+mine init                      once per repository
+  ↓
+mine-arch                     new requirement / target design
+or
+mine-sync                     existing repository / code baseline
+  ↓
+mine-plan-create              turn a Design change into a Plan
+  ↓
+mine-plan-exec                implement one Plan
+  ↓
+mine-plan-review              independent review
+  ↓
+repeat as needed
+  ↓
+mine-sync prepare this repository for stable release
+  ↓
+mine-plan-review complete release closure
+```
+
+You do **not** need to manually manage execution-graph revisions, report paths, temporary `plan/*` branches, `dev` integration mechanics, or candidate construction. Those are MINE's internal workflow machinery; the Skills and CLI handle them.
+
+**Lightweight maintenance:** you do not need a Plan for every edit. Typo fixes, prose cleanup, translation, broken links, README improvements, and other clearly behavior-preserving editorial maintenance can be done directly (still respecting `AGENTS.md`). Behavior-changing engineering work uses MINE.
+
 ## What the user must remember
 
 For normal use, the repository owner needs only one CLI command and five agent Skills:

@@ -173,6 +173,7 @@ fn command_route(cmd: &Commands) -> (&'static str, &'static str, Vec<String>, &'
         Commands::Repository { action } => repository_route(action),
         Commands::Dist { action } => dist_route(action),
         Commands::Release => ("release", "", vec![], "release"),
+        Commands::Scan { action } => scan_route(action),
         Commands::Mcp { action } => mcp_route(action),
     }
 }
@@ -443,5 +444,17 @@ fn dist_route(a: &DistCmd) -> (&'static str, &'static str, Vec<String>, &'static
 fn mcp_route(a: &McpCmd) -> (&'static str, &'static str, Vec<String>, &'static str) {
     match a {
         McpCmd::Serve => ("mcp", "serve", vec![], "mcp.serve"),
+    }
+}
+
+fn scan_route(a: &ScanCmd) -> (&'static str, &'static str, Vec<String>, &'static str) {
+    match a {
+        ScanCmd::PlanRefs { check } => {
+            let mut v = Vec::new();
+            if *check {
+                v.push("--check".to_string());
+            }
+            ("scan", "plan-refs", v, "scan.plan-refs")
+        }
     }
 }

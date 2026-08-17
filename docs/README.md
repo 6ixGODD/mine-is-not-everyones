@@ -4,7 +4,9 @@
 
 Pick the entry point for your goal:
 
-- **[Using MINE](user-guide.md)** — install, initialize, run the workflow day to day.
+- **[Using MINE](user-guide.md)** — install, initialize, run the workflow day to day. [中文版](user-guide.zh-CN.md)
+- **[Concepts](concepts.md)** — the mental model in five minutes. [中文版](concepts.zh-CN.md)
+- **[Troubleshooting](troubleshooting.md)** — common problems and fixes. [中文版](troubleshooting.zh-CN.md)
 - **[Design index](design/index.md)** — understand or develop MINE itself; the durable architecture source of truth.
 - **[Installation & lifecycle](user-guide.md#installation-and-lifecycle)** — `mine setup`, `mine update`, `mine uninstall`, `mine --version`.
 - **[Release & governance](design/governance/branch-and-plan-lifecycle.md)** — branch roles, plan lifecycle, and release closure.
@@ -46,4 +48,11 @@ See [`design/governance/branch-and-plan-lifecycle.md`](design/governance/branch-
 
 ## Language policy
 
-All files under `docs/` are English. The repository root contains an English `README.md` and a Chinese `README.zh-CN.md`.
+User-facing documentation is bilingual: English and Simplified Chinese
+(`docs/user-guide.md` / `docs/user-guide.zh-CN.md`, `docs/concepts.md` /
+`docs/concepts.zh-CN.md`, `docs/troubleshooting.md` /
+`docs/troubleshooting.zh-CN.md`, and root `README.md` /
+`README.zh-CN.md`). The English version is the canonical source for
+user-facing semantics; the Chinese version is semantically aligned, not a
+word-for-word translation. Internal durable Design (`docs/design/`) remains
+English, as does the development documentation in this index.

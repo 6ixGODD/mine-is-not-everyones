@@ -485,24 +485,20 @@ fn plan_create_does_not_force_a_new_plan_for_narrow_corrections() {
 fn review_skill_requires_stale_plan_reference_scan_at_release_closure() {
     let review = skill("mine-plan-review");
     assert!(
-        review.contains("scan-plan-refs.sh --check"),
-        "mine-plan-review must run the stale-plan-reference scanner before stable integration"
+        review.contains("mine scan plan-refs --check"),
+        "mine-plan-review must run the native stale-plan-reference scanner before stable integration"
     );
     assert!(
         review.contains("mine-release-allow-plan-reference:"),
         "mine-plan-review must document narrowly-scoped fixture exemptions"
     );
-
-    // The scanner is bundled alongside the Skill under references/.
-    let scanner = repo_root().join("skills/mine-plan-review/references/scan-plan-refs.sh");
-    let source = read(&scanner);
     assert!(
-        source.contains("git ls-files -z"),
-        "the scanner must inspect tracked files rather than an uncontrolled filesystem walk"
+        review.contains("tracked") && review.contains("git ls-files"),
+        "the native scanner contract must inspect tracked content"
     );
     assert!(
-        source.contains("--check") && source.contains("docs/plan"),
-        "the scanner must offer a failing release gate while excluding the temporary plan workspace"
+        review.contains("docs/plan/") && review.contains("--check"),
+        "the scanner contract must exclude the temporary plan workspace and offer a failing gate"
     );
 }
 
@@ -549,92 +545,6 @@ fn review_skill_does_not_invoke_mine_sync() {
     assert!(
         review.contains("does **not** invoke `mine-sync`"),
         "review Skill must state the reviewer does not invoke mine-sync"
-    );
-}
-
-#[test]
-fn scan_plan_refs_scans_go_layout_and_excludes_docs() {
-    use std::process::Command;
-    // Read the scanner source and pipe it via stdin so bash finds it regardless
-    // of Windows/Unix path format; current_dir is the temp repo so the
-    // scanner's `git rev-parse` targets it.
-    let scanner_src =
-        read(&repo_root().join("skills/mine-plan-review/references/scan-plan-refs.sh"));
-    let tmp = tempfile::tempdir().unwrap();
-
-    // Go-layout file that would have been missed by the old src/-only scan.
-    let go_dir = tmp.path().join("cmd");
-    std::fs::create_dir_all(&go_dir).unwrap();
-    std::fs::write(
-        go_dir.join("main.go"),
-        // mine-release-allow-plan-reference: scanner test fixture
-        "package main\n// Plan 99 historical comment\nfunc main() {}\n",
-    )
-    .unwrap();
-
-    // Documentation that must NOT be flagged.
-    let design_dir = tmp.path().join("docs").join("design");
-    std::fs::create_dir_all(&design_dir).unwrap();
-    // mine-release-allow-plan-reference: scanner test fixture
-    std::fs::write(design_dir.join("arch.md"), "# Plan 99 in design doc\n").unwrap();
-
-    let _git = Command::new("git")
-        .args(["init", "-q"])
-        .current_dir(tmp.path())
-        .status()
-        .unwrap();
-    let _cfg1 = Command::new("git")
-        .args(["config", "user.email", "t@t.t"])
-        .current_dir(tmp.path())
-        .status()
-        .unwrap();
-    let _cfg2 = Command::new("git")
-        .args(["config", "user.name", "t"])
-        .current_dir(tmp.path())
-        .status()
-        .unwrap();
-    let _add = Command::new("git")
-        .args(["add", "-A"])
-        .current_dir(tmp.path())
-        .status()
-        .unwrap();
-    let _commit = Command::new("git")
-        .args(["commit", "-qm", "test"])
-        .current_dir(tmp.path())
-        .status()
-        .unwrap();
-
-    use std::io::Write;
-    let mut child = Command::new("bash")
-        .arg("-s")
-        .arg("--")
-        .arg("--check")
-        .current_dir(tmp.path())
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .unwrap();
-    {
-        let mut stdin = child.stdin.take().unwrap();
-        stdin.write_all(scanner_src.as_bytes()).unwrap();
-    }
-    let out = child.wait_with_output().unwrap();
-    assert!(
-        !out.status.success(),
-        // mine-release-allow-plan-reference: scanner test fixture
-        "scanner must flag Plan 99 in cmd/main.go (Go layout)"
-    );
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let combined = format!("{stdout}{stderr}");
-    assert!(
-        combined.contains("cmd/main.go"),
-        "scanner output must name the Go-layout file: {combined}"
-    );
-    assert!(
-        !combined.contains("docs/design/arch.md"),
-        "scanner must not flag design documentation: {combined}"
     );
 }
 
@@ -771,177 +681,32 @@ fn review_skill_does_not_require_mine_product_distribution_as_universal_gate() {
 #[test]
 fn review_skill_resolves_scanner_from_loaded_skill_path() {
     let review = skill("mine-plan-review");
-    // The scanner must be resolved from the ACTUALLY LOADED SKILL.md's parent
-    // directory -- not from hardcoded client paths as the primary mechanism.
+    // The native scanner is the authoritative implementation; the Skill must
+    // invoke the CLI and state that no shell is required.
     assert!(
-        review.contains("file that is actually loaded"),
-        "the Skill must derive the scanner path from the actually loaded SKILL.md"
+        review.contains("mine scan plan-refs"),
+        "the Skill must invoke the native scan CLI"
     );
     assert!(
-        review.contains("Take its parent directory as the Skill directory"),
-        "the Skill must use the loaded SKILL.md's parent as the Skill directory"
+        review.contains("authoritative cross-platform scanner"),
+        "the Skill must name the native scanner as authoritative"
     );
     assert!(
-        review.contains("<loaded-skill-directory>/references/scan-plan-refs.sh"),
-        "the Skill must join references/ under the loaded Skill directory"
+        review.contains("no Bash, WSL, or Git Bash dependency"),
+        "the Skill must state the scan has no shell dependency"
     );
+    // The legacy Bash helper is demoted: retained for manual Unix use only,
+    // never the authoritative implementation.
     assert!(
-        review.contains("target repository root as the current working directory"),
-        "the Skill must run the scanner with the target repo as CWD"
+        review.contains("Legacy Bash helper")
+            && review.contains("not the authoritative implementation"),
+        "the Bash helper must be documented as a non-authoritative legacy helper"
     );
-    // Typical client paths are troubleshooting only, and a custom config root
-    // overrides them.
+    // The target repository never needs a local references/ directory.
     assert!(
-        review.contains("NOT a substitute for the loaded-path derivation")
-            && review.contains("custom `--config-root`"),
-        "per-client paths must be troubleshooting-only, not the resolution mechanism"
-    );
-    // The stdin fallback must exist for when the file cannot be located.
-    assert!(
-        review.contains("Fallback (stdin)"),
-        "the Skill must define the stdin fallback for scanner resolution"
-    );
-    assert!(
-        review.contains("bash -s -- --check"),
-        "the stdin fallback must pipe the scanner source to bash"
-    );
-    assert!(
-        review.contains("never needs a local `references/` directory"),
+        review.contains("does not ship `references/scan-plan-refs.sh`")
+            || review.contains("never needs a local `references/` directory"),
         "the target repository must never need a local references/ directory"
-    );
-}
-
-#[test]
-fn scanner_runs_from_installed_skill_dir_against_separate_target_repo() {
-    use std::process::Command;
-
-    // Stage a realistic installed Skill layout in a shared parent so the
-    // installed Skill directory is a sibling of the target repository. The
-    // scanner is then invoked by a path relative to the target repo's CWD,
-    // which Git Bash resolves without drive-letter issues.
-    let parent = tempfile::tempdir().unwrap();
-    let installed_refs = parent
-        .path()
-        .join("installed/skills/mine-plan-review/references");
-    std::fs::create_dir_all(&installed_refs).unwrap();
-    let scanner_bytes =
-        std::fs::read(repo_root().join("skills/mine-plan-review/references/scan-plan-refs.sh"))
-            .unwrap();
-    std::fs::write(installed_refs.join("scan-plan-refs.sh"), &scanner_bytes).unwrap();
-
-    // A separate target repository with a Go-layout file and NO local
-    // references/ directory.
-    let target = parent.path().join("target");
-    std::fs::create_dir_all(&target).unwrap();
-    let cmd_dir = target.join("cmd");
-    std::fs::create_dir_all(&cmd_dir).unwrap();
-    std::fs::write(
-        cmd_dir.join("main.go"),
-        // mine-release-allow-plan-reference: scanner test fixture
-        "package main\n// Plan 99 historical comment\nfunc main() {}\n",
-    )
-    .unwrap();
-    let _ = Command::new("git")
-        .args(["init", "-q"])
-        .current_dir(&target)
-        .status()
-        .unwrap();
-    let _ = Command::new("git")
-        .args(["config", "user.email", "t@t"])
-        .current_dir(&target)
-        .status()
-        .unwrap();
-    let _ = Command::new("git")
-        .args(["config", "user.name", "t"])
-        .current_dir(&target)
-        .status()
-        .unwrap();
-    let _ = Command::new("git")
-        .args(["add", "-A"])
-        .current_dir(&target)
-        .status()
-        .unwrap();
-    let _ = Command::new("git")
-        .args(["commit", "-qm", "test"])
-        .current_dir(&target)
-        .status()
-        .unwrap();
-    assert!(
-        !target.join("references").exists(),
-        "the target repository must not contain a local references/ directory"
-    );
-
-    // Invoke the scanner from its installed location (a sibling of the
-    // target repo) while the target repository is the working directory.
-    // A relative path from the target CWD avoids Windows drive-letter issues.
-    let scanner_rel = "../installed/skills/mine-plan-review/references/scan-plan-refs.sh";
-    let cmd = format!("bash \"{scanner_rel}\" --check");
-    let out = Command::new("bash")
-        .arg("-c")
-        .arg(&cmd)
-        .current_dir(&target)
-        .output()
-        .unwrap();
-    assert!(
-        !out.status.success(),
-        "scanner invoked from installed location must flag cmd/main.go (Go layout)"
-    );
-    let combined = format!(
-        "{}{}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    );
-    assert!(
-        combined.contains("cmd/main.go"),
-        "scanner output must name the Go-layout file: {combined}"
-    );
-    // The scanner internally cd's to the target repo's git toplevel; verify it
-    // did not scan the installed Skill directory instead.
-    assert!(
-        !combined.contains("scan-plan-refs.sh:"),
-        "scanner must not flag its own installed copy: {combined}"
-    );
-    // Also verify the clean case: a target repo with only docs/design content
-    // passes from the same installed location.
-    let clean_target = parent.path().join("clean_target");
-    std::fs::create_dir_all(clean_target.join("docs/design")).unwrap();
-    // mine-release-allow-plan-reference: scanner test fixture
-    std::fs::write(clean_target.join("docs/design/arch.md"), "# Plan 99 doc\n").unwrap();
-    let _ = Command::new("git")
-        .args(["init", "-q"])
-        .current_dir(&clean_target)
-        .status()
-        .unwrap();
-    let _ = Command::new("git")
-        .args(["config", "user.email", "t@t"])
-        .current_dir(&clean_target)
-        .status()
-        .unwrap();
-    let _ = Command::new("git")
-        .args(["config", "user.name", "t"])
-        .current_dir(&clean_target)
-        .status()
-        .unwrap();
-    let _ = Command::new("git")
-        .args(["add", "-A"])
-        .current_dir(&clean_target)
-        .status()
-        .unwrap();
-    let _ = Command::new("git")
-        .args(["commit", "-qm", "test"])
-        .current_dir(&clean_target)
-        .status()
-        .unwrap();
-    let out2 = Command::new("bash")
-        .arg("-c")
-        .arg(&cmd)
-        .current_dir(&clean_target)
-        .output()
-        .unwrap();
-    assert!(
-        out2.status.success(),
-        "scanner must pass on a clean target repo: {}",
-        String::from_utf8_lossy(&out2.stderr)
     );
 }
 
@@ -1004,4 +769,29 @@ fn en_zh_readmes_share_lifecycle_semantics() {
             "{name} README must mention bootstrap installation"
         );
     }
+}
+
+#[test]
+fn review_skill_uses_native_scan_command() {
+    let review = skill("mine-plan-review");
+    assert!(
+        review.contains("mine scan plan-refs --check"),
+        "mine-plan-review must invoke the native scan CLI, not the Bash helper"
+    );
+    // The Skill must not instruct running the Bash helper as the release path.
+    assert!(
+        !review.contains("bash references/scan-plan-refs.sh --check"),
+        "Skill must not instruct a target-repo-relative Bash scanner invocation"
+    );
+}
+
+#[test]
+fn review_skill_does_not_require_bash_for_scan() {
+    let review = skill("mine-plan-review");
+    // The closure path must not depend on a POSIX shell for the scan.
+    assert!(
+        review.contains("no Bash, WSL, or Git Bash dependency")
+            || review.contains("native cross-platform"),
+        "Skill must state the scan has no Bash/WSL dependency"
+    );
 }

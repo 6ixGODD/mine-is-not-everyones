@@ -28,6 +28,7 @@ mine design backup|validate|status
 mine repository version show|suggest|set
 mine agent config|install|uninstall|status
 mine dist sync|verify
+mine scan plan-refs
 mine mcp serve
 ```
 
@@ -225,5 +226,31 @@ arbitrary graph-editing CLI is introduced.
 - no duplicate document IDs;
 - plan anchors exist;
 - size thresholds produce warnings;
+- no duplicate document IDs;
+- plan anchors exist;
+- size thresholds produce warnings;
 - stable branch contains no `docs/plan/`;
 - no `docs/design-backup-*` path is tracked or staged for release.
+
+## Stale-plan-reference scan
+
+`mine scan plan-refs` is a read-only validation command, parallel to `mine graph validate` and `mine design validate`, that detects temporary historical Plan references (e.g. `Plan NN`) in tracked implementation content before stable release. It is the **authoritative cross-platform scanner**: a native Rust implementation with no Bash, WSL, or Git Bash dependency, so the release/review path works on Windows without WSL, Windows without `bash` on PATH, Linux, and macOS.
+
+### Semantics (preserved from the accepted scanner contract)
+
+- inspects **tracked** repository content (`git ls-files`), never an uncontrolled filesystem walk;
+- detects temporary historical Plan references matching `(^|[^[:alnum:]_])[Pp]lan[[:space:]-]*[0-9]`;
+- excludes temporary planning state and accepted documentation: `docs/plan/**`, `docs/design/**`, `docs/design-backup-*/**`, `docs/README.md`, root `README.md` / `README.zh-CN.md`, `tests/fixtures/**`, `**/testdata/**`;
+- honors the explicit fixture exemption marker `mine-release-allow-plan-reference:` on the immediately preceding line;
+- never rewrites source; it only reports evidence;
+- reports exact `file:line` findings;
+- `--check` mode exits non-zero when unexempted findings exist (release gate); without `--check` it prints findings and exits zero (repair mode);
+- operates against the repository selected by normal CLI context, including `--repo`;
+- supports `--format json` with stable machine-readable findings.
+
+### Exit codes
+
+- `0` no unexempted findings (or, without `--check`, findings reported for repair);
+- `1` `--check` mode with unexempted findings;
+- `2` usage error;
+- non-zero without findings when the target is not a Git repository or Git inspection fails (fail-closed).

@@ -108,7 +108,7 @@ It:
 - discovers the decisive validation suite from the repository under review, in this authority order: explicit current user instructions; repository governance (`AGENTS.md`); accepted Design and release contracts; the active Plan and its acceptance criteria; detected project build, test, lint, packaging, and integration systems - it never presumes Cargo, Python, Node, Go, or any other toolchain;
 - accepts or rejects through MINE;
 - may apply only unambiguous local fixes under strict rules;
-- before final stable integration, runs the tracked-implementation stale-plan-reference scan (resolved from the installed Skill directory, not the target repository), rewrites historical comments as durable contracts, and records narrowly scoped fixture exemptions;
+- before final stable integration, runs the native stale-plan-reference scan via `mine scan plan-refs --check` (the authoritative cross-platform implementation; no Bash/WSL/Git Bash dependency), rewrites historical comments as durable contracts, and records narrowly scoped fixture exemptions;
 - creates compensation plans for material failures;
 - merges an accepted plan branch into `dev` and deletes the accepted local branch when integration checks pass;
 - carries mechanical release closure via the explicit `mine-plan-review complete release closure` invocation after the repository owner has run the final `mine-sync` (Phase A); it does not itself invoke `mine-sync`;

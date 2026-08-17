@@ -47,6 +47,14 @@ This is a new project unless the user explicitly states otherwise. When a later 
 - Preserve unrelated changes and stage only explicit in-scope files.
 - Implementation agents may conclude `IMPLEMENTED`, never `ACCEPTED`. Independent review is required for `ACCEPTED`.
 
+## Lightweight maintenance
+
+MINE governs engineering change, not every repository edit. Direct, bounded, behavior-preserving maintenance may proceed without a MINE execution Plan when the correct result is unambiguous and no durable engineering contract changes: typo fixes, prose cleanup, translation, broken-link repair, README improvements, user-facing documentation additions, formatting-only documentation changes, examples that merely describe already-accepted behavior, and comments that do not change or establish behavioral contracts.
+
+Such work still must: respect this `AGENTS.md`; preserve unrelated changes; stage explicit files; run relevant validation; use normal commit discipline; and never silently change product behavior while claiming to be docs-only.
+
+Changes that alter or establish durable engineering behavior (business/runtime behavior, architecture, public API, CLI semantics, MCP contracts, Skill workflow behavior, execution-graph/state-machine behavior, release behavior, branch lifecycle, persistence/schema/migration, security/privacy/authority boundaries, deployment/operational contracts, durable Design decisions) require the normal Design → Plan → Execute → Review lifecycle. A documentation file is not automatically lightweight maintenance: if it changes the authoritative contract rather than describing already-accepted behavior, it belongs in normal MINE governance.
+
 ## Parallel execution
 
 - Use MINE CLI/MCP to query and transition `docs/plan/execution-graph.toml`; treat the Markdown graph as generated read-only output. Use the plan's work-package DAG.

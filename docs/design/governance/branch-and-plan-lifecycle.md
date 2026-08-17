@@ -125,7 +125,54 @@ upstream), which the accept pass cannot reach.
 - `docs/design/` on `dev` describes approved target behavior.
 - Every plan references exact design paths and anchors.
 - Execution agents commit scoped implementation but never self-accept.
+- Design changes precede plans.
+- Plan files are immutable after execution starts.
+- Reports and graph state are temporary but committed on managed development branches for reviewability.
+- `docs/design/` on `dev` describes approved target behavior.
+- Every plan references exact design paths and anchors.
+- Execution agents commit scoped implementation but never self-accept.
 - Review agents may merge accepted work into `dev` and remove the local accepted plan branch.
+
+## Lightweight maintenance boundary
+
+**MINE governs engineering change, not every repository edit.** A coding agent
+may perform direct, bounded, behavior-preserving repository maintenance
+without creating a MINE execution Plan when the correct result is unambiguous
+and no durable engineering contract changes.
+
+### Maintenance that may bypass Plan creation
+
+Examples: typo fixes; prose cleanup; translation; broken-link repair; README
+improvements; user-facing documentation additions; formatting-only
+documentation changes; examples that merely describe already-accepted
+behavior; comments that do not change or establish behavioral contracts;
+other clearly behavior-preserving editorial maintenance.
+
+Such work still must:
+
+- respect `AGENTS.md`;
+- preserve unrelated changes;
+- stage explicit files;
+- run relevant validation;
+- use normal commit discipline;
+- never silently change product behavior while claiming to be docs-only.
+
+It does **not** require `mine-arch` → `mine-plan-create` → `mine-plan-exec` →
+`mine-plan-review` solely to preserve procedural formality.
+
+### Changes that still require the MINE lifecycle
+
+Use normal Design → Plan → Execute → Review when a change alters or
+establishes durable engineering behavior, including: business/runtime
+behavior; architecture; public API; CLI semantics; MCP contracts; Skill
+workflow behavior; execution-graph/state-machine behavior; release behavior;
+branch lifecycle; persistence/schema/migration behavior;
+security/privacy/authority boundaries; deployment/operational contracts;
+durable Design decisions.
+
+A documentation file is **not automatically lightweight maintenance**. If
+documentation changes the authoritative contract rather than merely
+describing already-accepted behavior, it belongs in normal MINE governance.
 
 ## Reviewer authority to correct, not only to verdict
 

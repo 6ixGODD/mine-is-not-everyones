@@ -210,7 +210,9 @@ MINE 仍处于早期阶段，而且有意保持强烈倾向性。
 ## 文档
 
 * [文档索引](docs/README.md)
-* [用户手册](docs/user-guide.md)
+* [用户指南](docs/user-guide.zh-CN.md) · [User guide](docs/user-guide.md)
+* [概念](docs/concepts.zh-CN.md) · [Concepts](docs/concepts.md)
+* [故障排查](docs/troubleshooting.zh-CN.md) · [Troubleshooting](docs/troubleshooting.md)
 * [Design 索引](docs/design/index.md)
 
 ## 许可证
