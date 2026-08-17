@@ -62,13 +62,7 @@ jobs:
         run: cargo build --all-targets --all-features
 
       - name: cargo test
-        run: >-
-          cargo test --all-targets --all-features --
-          --skip user_guide_lists_supported_clients_only_and_no_imaginary_commands
-          --skip user_guide_names_design_root_and_backup_behavior
-          --skip user_guide_uses_agent_status_for_machine_level_lifecycle
-          --skip docs_readme_anchor_points_to_installation_and_lifecycle
-          --skip en_zh_readmes_share_lifecycle_semantics
+        run: cargo test --all-targets --all-features
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -93,6 +87,7 @@ jobs:
             echo "No development graph: valid stable tree; graph validation is not applicable."
           fi
 
+  # --- Release preflight (validation only; can genuinely fail) ---
   preflight:
     name: Release preflight
     runs-on: ubuntu-latest
@@ -110,12 +105,17 @@ jobs:
       - name: Release preflight (development workspace only)
         shell: bash
         run: |
+          # Release preflight consumes the temporary execution graph. A stable
+          # release tree intentionally omits docs/plan/, so it is not a valid
+          # preflight input. Its stable-tree safety is instead covered by the
+          # attached-branch doctor and release-candidate checks.
           if [ -f docs/plan/execution-graph.toml ]; then
             ./target/debug/mine release --format json
           else
             echo "No development graph: release preflight is not applicable on the stable tree."
           fi
 
+  # --- Deterministic release artifact + SHA-256 integrity checksum (smoke) ---
   artifact:
     name: Artifact + SHA-256
     runs-on: ubuntu-latest
@@ -138,6 +138,12 @@ jobs:
       - name: Generate SHA-256 checksum (artifact integrity)
         shell: bash
         run: |
+          # Build once, hash once. This is an INTEGRITY check (the checksum
+          # verifies the artifact was not corrupted during upload/download),
+          # NOT a reproducibility check. We do not claim the build is
+          # byte-reproducible across independent builds. Python's hashlib is
+          # used for cross-platform consistency (no reliance on certutil's
+          # space-separated output format or platform-specific coreutils).
           BIN=target/release/mine
           [ "$RUNNER_OS" = "Windows" ] && BIN=target/release/mine.exe
           python -c "
@@ -152,6 +158,10 @@ jobs:
       - name: Verify the checksum matches the actual artifact
         shell: bash
         run: |
+          # Re-hash the same artifact and compare: this verifies the checksum
+          # file was written correctly and the artifact has not changed since
+          # hashing (e.g., a concurrent modification). It is NOT a claim of
+          # build reproducibility.
           BIN=target/release/mine
           [ "$RUNNER_OS" = "Windows" ] && BIN=target/release/mine.exe
           python -c "
@@ -171,6 +181,7 @@ jobs:
           path: mine-sha256.txt
           retention-days: 7
 
+  # --- Bootstrap smoke test (isolated temp repo) ---
   bootstrap:
     name: Bootstrap smoke
     runs-on: ubuntu-latest
@@ -197,13 +208,21 @@ jobs:
           git -C "$TMP" add .
           git -C "$TMP" commit --quiet -m "init"
           ./target/debug/mine --repo "$TMP" init --format json
+          # Verify skeleton created.
           test -f "$TMP/.mine/config.toml"
           test -f "$TMP/docs/design/.mine-design.toml"
           test -f "$TMP/docs/design/index.md"
+          # Verify no plan workspace.
           ! test -d "$TMP/docs/plan"
           echo "Bootstrap smoke test passed"
           rm -rf "$TMP"
 
+  # --- Isolated mine setup + agent status smoke (single platform) ---
+  # End-to-end check of the bootstrap->setup->install path with an isolated
+  # config root. Platform-specific junction/symlink/MCP behavior is already
+  # covered by the quality job's agent_setup tests on all three platforms;
+  # this job only verifies the setup command's integration layer, so a single
+  # Ubuntu runner suffices.
   agent-install:
     name: mine setup + agent status
     runs-on: ubuntu-latest
@@ -228,8 +247,15 @@ jobs:
         run: |
           set -e
           TMP=$(mktemp -d)
+          # Non-TTY CI: exercise the mine setup non-interactive path with an
+          # explicit agent list and isolated config root. This installs all
+          # four agents (MCP + Skills) exactly as bootstrap would on a user
+          # machine with --agents.
           ./target/debug/mine setup --agents claude-code,codex,pi,opencode --yes --config-root "$TMP" --format json
           echo "=== agent status ==="
+          # Verify all four agents are installed with MCP registered. Use agent
+          # status (not full doctor) because doctor also checks graph/git which
+          # are not meaningful on a detached tag checkout.
           ./target/debug/mine agent status --config-root "$TMP" --format json > status.json
           python -c "
           import json
@@ -246,6 +272,14 @@ jobs:
           rm -f status.json
           rm -rf "$TMP"
 
+  # --- Real downloadable release assets (tag pushes only) ---
+  # Triggered by pushing a `v*` tag. Produces prebuilt, downloadable binaries
+  # for Linux (x86_64), macOS (Apple Silicon), and Windows (x86_64),
+  # packages each as an archive with a SHA-256 sidecar, and publishes a real
+  # GitHub Release with those assets. End users install `mine` by downloading
+  # the archive for their platform -- no Rust toolchain required. Branch/PR
+  # pushes never reach this job (`if` gate), so they cannot accidentally
+  # publish a release.
   release-artifacts:
     name: Release artifact (${{ matrix.display }})
     if: startsWith(github.ref, 'refs/tags/v')
@@ -294,6 +328,9 @@ jobs:
           test -f "$BIN"
           STAGE="mine-$DISPLAY-stage"
           rm -rf "$STAGE"; mkdir -p "$STAGE"
+          # Keep the platform-native binary name (mine.exe on Windows, mine on
+          # Unix). Renaming mine.exe -> mine breaks Windows users and
+          # bootstrap's archive lookup.
           cp "$BIN" "$STAGE"/"$BIN_NAME"
           cp README.md LICENSE "$STAGE"/ 2>/dev/null || true
           if [ "$ARCHIVE" = "zip" ]; then
@@ -325,6 +362,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          # Full history so git-cliff can walk commits since the last tag.
           fetch-depth: 0
 
       - name: Generate changelog with git-cliff
@@ -342,6 +380,8 @@ jobs:
           CLIFF_CONTENT: ${{ steps.cliff.outputs.content }}
         run: |
           set -eu
+          # CLIFF_CONTENT is the changelog text (not a file path); write it
+          # then append the hand-written install/usage template.
           {
             printf '%s\n' "$CLIFF_CONTENT"
             echo
