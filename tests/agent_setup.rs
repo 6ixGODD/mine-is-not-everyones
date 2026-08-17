@@ -16,6 +16,8 @@ mod doctor_tests;
 mod install_tests;
 #[path = "agent_setup/isolation_tests.rs"]
 mod isolation_tests;
+#[path = "agent_setup/refresh_tests.rs"]
+mod refresh_tests;
 #[path = "agent_setup/safety_tests.rs"]
 mod safety_tests;
 #[path = "agent_setup/transaction_tests.rs"]

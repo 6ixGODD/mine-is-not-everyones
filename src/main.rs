@@ -26,6 +26,51 @@ fn main() -> std::process::ExitCode {
         .next()
         .unwrap_or("mine");
 
+    // Internal refresh-only mode: `mine update` re-runs the newly replaced
+    // binary with `__refresh-skills` so installed Agent Skills are refreshed
+    // from the NEW binary's embedded payload without requiring `mine setup`.
+    // This is an internal entry point, not a user-facing command.
+    if argv.iter().any(|a| a == "__refresh-skills") {
+        let json = format_is_json(&argv);
+        let config_root = argv
+            .windows(2)
+            .find(|w| w[0] == "--config-root")
+            .map(|w| std::path::PathBuf::from(&w[1]));
+        let env = match config_root {
+            Some(root) => mine::agent_setup::targets::Env::isolated(root),
+            None => mine::agent_setup::targets::Env::real_env(),
+        };
+        let report = mine::application::agent_service::refresh_all_installed(
+            &env,
+            env!("CARGO_PKG_VERSION"),
+        );
+        let payload = serde_json::to_string(&report).unwrap_or_else(|_| "{}".to_string());
+        let line = if json {
+            format!("{{\"command\":\"__refresh-skills\",\"data\":{payload},\"ok\":true}}\n")
+        } else {
+            let mut s = format!("skills refreshed for {}\n", env!("CARGO_PKG_VERSION"));
+            if report.refreshed.is_empty() && report.errors.is_empty() {
+                s.push_str("no managed agent installations to refresh\n");
+            }
+            for a in &report.refreshed {
+                s.push_str(&format!("  refreshed: {a}\n"));
+            }
+            for e in &report.errors {
+                s.push_str(&format!("  error: {e}\n"));
+            }
+            s
+        };
+        let stdout = std::io::stdout();
+        let mut lock = stdout.lock();
+        let _ = lock.write_all(line.as_bytes());
+        let _ = lock.flush();
+        return if report.errors.is_empty() {
+            std::process::ExitCode::SUCCESS
+        } else {
+            std::process::ExitCode::from(4)
+        };
+    }
+
     let outcome = cli::dispatch(&argv, program);
 
     // `mine mcp serve` owns stdio for the MCP transport: the rmcp-backed

@@ -49,6 +49,29 @@ For clients with MCP support, `mine setup` registers the local `mine mcp serve` 
 automatically fall back to the JSON CLI interface. Pi does not include MCP in its minimal core, so it can use MINE
 entirely through Skills + CLI.
 
+### Updating
+
+`mine update` replaces the binary **and** refreshes the Skills of every
+installed Agent from the new version's embedded payload, so you do not need
+to re-run `mine setup` after an upgrade:
+
+```sh
+mine update
+```
+
+`mine setup` is for **first-time installation** and for adding or removing
+Agents (for example `mine setup --agents claude-code,codex`). After an
+update, verify with `mine --version` and `mine agent status`.
+
+### Pi shared Skills
+
+Pi discovers Skills both in the shared Agent Skills directory
+(`~/.agents/skills`, where Codex installs) and in its own directory
+(`~/.pi/agent/skills`). To avoid Pi loading two copies (and the resulting
+conflict warning), when the shared directory already contains a complete
+MINE Skill set, MINE installs Pi's Skills into the shared directory and
+removes any legacy MINE Skills from `~/.pi/agent/skills`.
+
 ### Installing a specific version
 
 The bootstrap installer uses the latest Release by default. To install a specific version, set `MINE_REF`.

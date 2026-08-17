@@ -174,9 +174,22 @@ impl Targets {
             }
             Agent::Pi => {
                 let pi_dir = env.dir("PI_HOME", ".pi");
+                let pi_skills = pi_dir.join("agent").join("skills");
+                // Pi deduplication: Pi discovers Skills in both the shared
+                // Agent Skills directory (~/.agents/skills, Codex's location)
+                // and its own ~/.pi/agent/skills. When the shared directory
+                // already has a complete MINE skill set, point Pi at the
+                // shared copy so Pi never loads two copies (conflict
+                // warning); otherwise fall back to Pi's own directory.
+                let shared = env.config_root.join(".agents").join("skills");
+                let skills_dir = if has_complete_mine_skill_set(&shared) {
+                    shared
+                } else {
+                    pi_skills
+                };
                 Self {
                     agent,
-                    skills_dir: pi_dir.join("agent").join("skills"),
+                    skills_dir,
                     mcp_config_file: None, // No MCP in Pi minimal core.
                 }
             }
@@ -205,6 +218,23 @@ impl Targets {
             .ok()
             .map(|p| p.to_string_lossy().replace('\\', "/"))
     }
+}
+
+/// Returns `true` when `dir` contains a complete MINE first-class Skill set
+/// (all five Skills present with a `SKILL.md`). Used for Pi deduplication:
+/// a complete shared set means Pi should use the shared copy rather than its
+/// own directory.
+pub fn has_complete_mine_skill_set(dir: &std::path::Path) -> bool {
+    const SKILLS: [&str; 5] = [
+        "mine-arch",
+        "mine-sync",
+        "mine-plan-create",
+        "mine-plan-exec",
+        "mine-plan-review",
+    ];
+    SKILLS
+        .iter()
+        .all(|name| dir.join(name).join("SKILL.md").is_file())
 }
 
 /// Returns the real platform home directory (production real-env path only).

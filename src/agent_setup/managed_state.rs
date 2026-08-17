@@ -211,6 +211,13 @@ impl ManagedState {
         self.installs.iter().find(|r| r.agent == agent)
     }
 
+    /// Returns all installation records (used for shared-destination checks
+    /// and update-time Skill refresh).
+    #[must_use]
+    pub fn records(&self) -> &[AgentInstallRecord] {
+        &self.installs
+    }
+
     /// Replaces the record for `agent` (inserting if absent) with `record`.
     pub fn upsert(&mut self, record: AgentInstallRecord) {
         if let Some(slot) = self.installs.iter_mut().find(|r| r.agent == record.agent) {

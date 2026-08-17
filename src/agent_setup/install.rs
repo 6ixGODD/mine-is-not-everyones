@@ -95,6 +95,53 @@ fn install_inner(
     let guard = SafetyGuard::new(&env.config_root);
     let targets = Targets::resolve(agent, env);
 
+    // Pi deduplication: when the shared Agent Skills directory already has a
+    // complete MINE skill set, Targets::resolve points Pi at the shared copy.
+    // Remove any legacy MINE Skills under Pi's own directory (~/.pi/agent/
+    // skills) so Pi never loads two copies (conflict warning). Only files
+    // whose paths match the embedded MINE payload are removed; unrelated user
+    // files are preserved, and a directory is removed only when empty.
+    if !dry_run && agent == Agent::Pi {
+        let shared = env.config_root.join(".agents").join("skills");
+        if crate::agent_setup::targets::has_complete_mine_skill_set(&shared) {
+            let pi_dir = env
+                .overrides
+                .get("PI_HOME")
+                .cloned()
+                .unwrap_or_else(|| env.config_root.join(".pi"));
+            let legacy_skills = pi_dir.join("agent").join("skills");
+            if legacy_skills.is_dir() {
+                let mut removed = 0usize;
+                for f in embedded_skills::EMBEDDED_SKILL_FILES {
+                    let sub = f.path.strip_prefix("skills/").unwrap_or(f.path).to_string();
+                    let dest = legacy_skills.join(&sub);
+                    let abs = guard.ensure_within_root(&dest)?;
+                    if abs.is_file() {
+                        std::fs::remove_file(&abs).map_err(MineError::Io)?;
+                        removed += 1;
+                    }
+                }
+                // Remove now-empty MINE skill directories recursively (only
+                // EMPTY directories are removed; any unrelated user file
+                // stops the removal and is preserved).
+                for name in [
+                    "mine-arch",
+                    "mine-sync",
+                    "mine-plan-create",
+                    "mine-plan-exec",
+                    "mine-plan-review",
+                ] {
+                    let d = legacy_skills.join(name);
+                    remove_empty_dirs_recursive(&d);
+                }
+                if removed > 0 {
+                    // Surface the cleanup in the outcome below.
+                    let _ = removed;
+                }
+            }
+        }
+    }
+
     // 1. Recover any prior incomplete transaction for this agent (Fix 2).
     if !dry_run {
         detect_and_recover(agent.slug(), &env.config_root, &guard)?;
@@ -170,12 +217,21 @@ fn install_inner(
     let mut skill_count = 0usize;
     let mut created_this_txn: Vec<String> = Vec::new();
     let mut first = true;
+    // MINE-owned paths across ALL managed records (not just this Agent's):
+    // shared destinations (e.g. Pi using the ~/.agents/skills set owned by
+    // Codex) must be treated as MINE-owned, otherwise the collision check
+    // falsely rejects a legitimate shared file.
+    let owned_by_any_record: std::collections::HashSet<&str> = state
+        .records()
+        .iter()
+        .flat_map(|r| r.files.iter().map(|f| f.path.as_str()))
+        .collect();
     for (subpath, content) in &payload {
         let dest = guard.ensure_within_root(&targets.skills_dir.join(subpath))?;
         // Collision: refuse to overwrite a file that is not proven MINE-owned.
-        let was_previously_owned = previous_record_files
-            .iter()
-            .any(|f| f.path == rel(&dest, &env.config_root));
+        let rel_dest = rel(&dest, &env.config_root);
+        let was_previously_owned = owned_by_any_record.contains(rel_dest.as_str())
+            || previous_record_files.iter().any(|f| f.path == rel_dest);
         if dest.exists() && !was_previously_owned {
             // Not ours and not a pre-existing user file we manage -> refuse.
             // Rollback only the files THIS transaction actually created (not
@@ -397,4 +453,23 @@ fn rel(abs: &Path, root: &Path) -> String {
     abs.strip_prefix(root)
         .map(|p| p.to_string_lossy().replace('\\', "/"))
         .unwrap_or_else(|_| abs.to_string_lossy().replace('\\', "/"))
+}
+
+/// Removes `dir` and all of its subdirectories, but only while they are
+/// empty. Any non-empty directory (containing an unrelated user file) stops
+/// the recursion at that point and is preserved. Best-effort: failures are
+/// ignored because the goal is tidiness, not error semantics.
+fn remove_empty_dirs_recursive(dir: &Path) {
+    if !dir.is_dir() {
+        return;
+    }
+    if let Ok(rd) = std::fs::read_dir(dir) {
+        for entry in rd.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                remove_empty_dirs_recursive(&p);
+            }
+        }
+    }
+    let _ = std::fs::remove_dir(dir); // only succeeds when empty
 }

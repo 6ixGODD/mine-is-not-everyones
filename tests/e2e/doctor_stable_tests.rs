@@ -458,10 +458,12 @@ fn agent_drift_produces_unhealthy_diagnostics() {
         assert_eq!(exit, 0, "install {slug} failed: {env}");
     }
 
-    // Corrupt a Pi skill file (drift).
-    let pi_skill = cfg_tmp.path().join(".pi/agent/skills/mine-sync/SKILL.md");
-    assert!(pi_skill.exists(), "pi skill file exists before drift");
-    std::fs::write(&pi_skill, "CORRUPTED CONTENT\n").unwrap();
+    // Corrupt a Claude Code skill file (drift). Claude Code always uses its
+    // own skills directory, so this is stable regardless of the Pi shared-
+    // Skills deduplication rule.
+    let cc_skill = cfg_tmp.path().join(".claude/skills/mine-sync/SKILL.md");
+    assert!(cc_skill.exists(), "claude skill file exists before drift");
+    std::fs::write(&cc_skill, "CORRUPTED CONTENT\n").unwrap();
 
     let (exit, env, _) = run_doctor(repo, cfg_tmp.path(), "all");
     // Doctor exit code: repo_ok is true (stable tree), but agent problems exist.
@@ -475,10 +477,10 @@ fn agent_drift_produces_unhealthy_diagnostics() {
     let diags = env["data"]["agents"]["diagnostics"]
         .as_array()
         .expect("diagnostics array exists");
-    let pi = diags.iter().find(|d| d["agent"] == "pi").unwrap();
+    let cc = diags.iter().find(|d| d["agent"] == "claude-code").unwrap();
     assert_ne!(
-        pi["status"], "healthy",
-        "pi must not be healthy after drift"
+        cc["status"], "healthy",
+        "claude-code must not be healthy after drift"
     );
 }
 

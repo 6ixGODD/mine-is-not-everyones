@@ -47,6 +47,24 @@ MINE 当前支持 Claude Code、Codex、Pi 和 OpenCode。
 对于支持 MCP 的客户端，mine setup 会注册本地 mine mcp serve；当 MCP 不可用时，Skill 会自动回退到 JSON CLI 模式。Pi
 的最小核心本身不包含 MCP，因此可以直接使用 Skills + CLI 完成全部操作。
 
+### 更新
+
+`mine update` 会替换二进制**并**用新版本的 embedded payload 刷新所有已安装 Agent 的 Skill，因此升级后无需重新运行
+`mine setup`：
+
+```sh
+mine update
+```
+
+`mine setup` 用于**首次安装**以及添加或移除 Agent（例如 `mine setup --agents claude-code,codex`）。更新后用
+`mine --version` 和 `mine agent status` 验证。
+
+### Pi 共享 Skill
+
+Pi 会在共享 Agent Skills 目录（`~/.agents/skills`，即 Codex 的安装位置）和自身目录（`~/.pi/agent/skills`）同时发现
+Skill。为避免 Pi 加载两份（以及由此产生的冲突告警），当共享目录已有完整 MINE Skill 集时，MINE 会将 Pi 的 Skill 安装到
+共享目录，并移除 `~/.pi/agent/skills` 下的遗留 MINE Skill。
+
 ### 安装指定版本
 
 bootstrap 默认安装最新 Release。如需安装指定版本，请使用`MINE_REF`。

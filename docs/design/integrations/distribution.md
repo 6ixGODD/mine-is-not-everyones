@@ -56,6 +56,27 @@ Pi does not have MCP in its minimal core. MINE supports either:
 
 No duplicate TypeScript implementation of graph rules is allowed.
 
+### Shared Agent Skills deduplication for Pi
+
+Pi discovers Skills both in the shared Agent Skills directory (`~/.agents/skills`,
+where Codex installs) and in Pi's own directory (`~/.pi/agent/skills`). If MINE
+Skills exist in **both** locations, Pi loads two copies and reports a
+conflict/duplicate warning.
+
+When installing or refreshing Pi:
+
+1. If the shared Agent Skills directory already contains a complete MINE Skill
+   set (all five first-class Skills present), Pi's Skills are **not** installed
+   into `~/.pi/agent/skills`; Pi uses the shared copy. Any legacy MINE Skills
+   found in `~/.pi/agent/skills` are **removed** (they are MINE-owned).
+2. Otherwise (no complete shared set), Pi's Skills install into
+   `~/.pi/agent/skills` as before.
+3. The managed-state record always records the actual destination so `mine
+   doctor`, refresh, and `mine uninstall` operate on the real paths.
+
+This rule is Pi-specific because Pi is the only supported client that scans
+both locations; the other clients use one deterministic directory each.
+
 ## OpenCode
 
 Install Skills into one supported location only, preferring a shared Agent Skills or Claude-compatible directory. Configure the local stdio MCP server using OpenCode's current MCP configuration or CLI.
@@ -77,6 +98,32 @@ The installer:
 - never reads real process environment variables (`CLAUDE_CONFIG_DIR`,
   `CODEX_HOME`, `PI_HOME`, `OPENCODE_CONFIG_DIR`) when an explicit
   `--config-root` is supplied.
+
+## Skill refresh on `mine update`
+
+`mine update` replaces the binary **and** refreshes the Skills of every Agent
+with a managed-state record, using the payload embedded in the **new** binary.
+After a successful update the user does not need to run `mine setup` to get
+new Skill content; `mine update` is the upgrade path for both binary and
+Skills.
+
+Mechanics:
+
+- the update process first replaces the binary on disk;
+- it then re-runs the new binary in a refresh-only mode that rewrites each
+  managed Agent's Skill payload (same transactional rules as install:
+  MINE-owned files overwritten, hashes and `mine_version` records updated,
+  unrelated files untouched), and applies the Pi deduplication rule;
+- `mine setup` remains the entry point for **first-time installation** and for
+  adding or removing Agents interactively; it is not required after every
+  update;
+- `mine doctor` detects a stale `mine_version` record as before; the
+  update-time refresh prevents that state from persisting.
+
+If the refresh fails for one Agent (e.g. a collision), update still succeeds
+for the binary and the failed Agent keeps its previous record; `mine doctor`
+reports the stale/drifted state so the user can run `mine setup` for that
+Agent. Refresh failures are reported, not silently swallowed.
 
 ### Mandatory configuration backup before mutation
 

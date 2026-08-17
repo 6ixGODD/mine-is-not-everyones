@@ -1659,14 +1659,27 @@ fn setup(_parsed: &crate::cli::ParsedArgs, rest: &[String]) -> HandlerResult {
 fn update(_parsed: &crate::cli::ParsedArgs, rest: &[String]) -> HandlerResult {
     let (flags, _pos) = parse_flags(rest);
     let yes = flags.iter().any(|(k, _)| k == "yes" || k == "y");
-    let args = crate::setup::UpdateArgs { yes };
+    let config_root = flag(&flags, "config-root").map(std::path::PathBuf::from);
+    let args = crate::setup::UpdateArgs { yes, config_root };
     let report = crate::setup::run_update(&args).map_err(|e| HandlerError::from_mine(&e))?;
     let env_data = envelope_for("update", None)
         .with_data(serde_json::to_value(&report).unwrap_or(Value::Null));
-    let lines = vec![HumanLine::Section(format!(
+    let mut lines = vec![HumanLine::Section(format!(
         "mine update: {} -> {} ({})",
         report.from, report.to, report.note
     ))];
+    for a in &report.skills_refreshed {
+        lines.push(HumanLine::Field {
+            key: "  skills refreshed".to_string(),
+            value: a.clone(),
+        });
+    }
+    for e in &report.skills_errors {
+        lines.push(HumanLine::Field {
+            key: "  skills error".to_string(),
+            value: e.clone(),
+        });
+    }
     Ok((env_data, lines))
 }
 

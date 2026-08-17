@@ -166,7 +166,8 @@ pub fn run_setup(args: &SetupArgs) -> MineResult<SetupReport> {
     })
 }
 
-/// Runs `mine update`: compare to latest, optionally download+replace.
+/// Runs `mine update`: compare to latest, optionally download+replace, then
+/// refresh installed Agent Skills from the new binary's embedded payload.
 pub fn run_update(args: &UpdateArgs) -> MineResult<UpdateReport> {
     let current = env!("CARGO_PKG_VERSION");
     let latest = release_meta::latest_tag();
@@ -185,16 +186,25 @@ pub fn run_update(args: &UpdateArgs) -> MineResult<UpdateReport> {
                         to: tag,
                         updated: false,
                         note: "update declined".to_string(),
+                        skills_refreshed: Vec::new(),
+                        skills_errors: Vec::new(),
                     });
                 }
             }
             let to = tag.clone();
             self_update::download_and_replace(&to)?;
+            // The on-disk binary is now the NEW version. Re-run it in
+            // refresh-only mode so installed Agent Skills are rewritten from
+            // the new binary's embedded payload (this process still runs the
+            // OLD binary, whose embedded payload is stale).
+            let (skills_refreshed, skills_errors) = refresh_installed_after_update(args);
             Ok(UpdateReport {
                 from: current.to_string(),
                 to,
                 updated: true,
                 note: "updated".to_string(),
+                skills_refreshed,
+                skills_errors,
             })
         }
         Ok(tag) => Ok(UpdateReport {
@@ -202,10 +212,46 @@ pub fn run_update(args: &UpdateArgs) -> MineResult<UpdateReport> {
             to: tag,
             updated: false,
             note: "already up to date".to_string(),
+            skills_refreshed: Vec::new(),
+            skills_errors: Vec::new(),
         }),
         Err(e) => Err(MineError::ExternalDependency {
             detail: format!("could not resolve latest release: {e}"),
         }),
+    }
+}
+
+/// Spawns the (newly replaced) binary with the internal `__refresh-skills`
+/// entry point, waits for it, and returns (refreshed slugs, per-Agent errors).
+/// A spawn/parse failure is reported as a refresh error, never as an update
+/// failure: the binary update itself already succeeded.
+fn refresh_installed_after_update(args: &UpdateArgs) -> (Vec<String>, Vec<String>) {
+    let exe = match std::env::current_exe() {
+        Ok(e) => e,
+        Err(e) => return (Vec::new(), vec![format!("current exe: {e}")]),
+    };
+    let mut cmd = std::process::Command::new(&exe);
+    cmd.arg("--format").arg("json").arg("__refresh-skills");
+    if let Some(root) = &args.config_root {
+        cmd.arg("--config-root").arg(root);
+    }
+    let out = match cmd.output() {
+        Ok(o) => o,
+        Err(e) => return (Vec::new(), vec![format!("refresh spawn failed: {e}")]),
+    };
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let report: Option<crate::application::agent_service::RefreshReport> =
+        serde_json::from_str(stdout.trim()).ok();
+    match report {
+        Some(r) => (r.refreshed, r.errors),
+        None => (
+            Vec::new(),
+            vec![format!(
+                "refresh report unparseable (exit {}): {}",
+                out.status,
+                stdout.trim()
+            )],
+        ),
     }
 }
 
@@ -266,6 +312,9 @@ pub struct SetupArgs {
 #[derive(Debug, Clone, Default)]
 pub struct UpdateArgs {
     pub yes: bool,
+    /// Explicit isolated config root (CI/tests). When set, the refresh child
+    /// process also receives it so real HOME is never touched.
+    pub config_root: Option<std::path::PathBuf>,
 }
 
 /// CLI flags for `mine uninstall`.
@@ -290,6 +339,10 @@ pub struct UpdateReport {
     pub to: String,
     pub updated: bool,
     pub note: String,
+    /// Agent slugs whose Skills were refreshed by the new binary.
+    pub skills_refreshed: Vec<String>,
+    /// Per-Agent Skill refresh errors.
+    pub skills_errors: Vec<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]

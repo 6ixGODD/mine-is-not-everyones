@@ -48,6 +48,58 @@ pub fn uninstall(slug: &str, env: &Env, dry_run: bool) -> MineResult<UninstallOu
     agent_setup::uninstall::uninstall(agent, env, dry_run)
 }
 
+/// Result of the update-time Skill refresh.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RefreshReport {
+    /// The MINE version whose embedded payload was applied.
+    pub mine_version: String,
+    /// Agent slugs whose Skills were refreshed successfully.
+    pub refreshed: Vec<String>,
+    /// Per-Agent refresh errors (agent slug + message).
+    pub errors: Vec<String>,
+}
+
+/// Refreshes the Skills of every Agent that has a managed-state record,
+/// using the payload embedded in the **current** binary. This is the
+/// update-time refresh: after `mine update` replaces the binary, the new
+/// binary re-runs this so installed Skills and version records catch up
+/// without requiring `mine setup`. Per-Agent failures are collected and
+/// reported; they do not abort the refresh of other Agents.
+pub fn refresh_all_installed(env: &Env, mine_version: &str) -> RefreshReport {
+    let state = crate::agent_setup::managed_state::ManagedState::load(&env.config_root);
+    let mut report = RefreshReport {
+        mine_version: mine_version.to_string(),
+        refreshed: Vec::new(),
+        errors: Vec::new(),
+    };
+    let records = match state {
+        Ok(s) => s.records().to_vec(),
+        Err(e) => {
+            report.errors.push(format!("managed state: {e}"));
+            return report;
+        }
+    };
+    for record in records {
+        let slug = record.agent.clone();
+        match resolve_agent(&slug) {
+            Ok(agent) => {
+                match agent_setup::install::install(
+                    agent,
+                    env,
+                    mine_version,
+                    false,
+                    FailPhase::None,
+                ) {
+                    Ok(_) => report.refreshed.push(slug),
+                    Err(e) => report.errors.push(format!("{slug}: {e}")),
+                }
+            }
+            Err(e) => report.errors.push(format!("{slug}: {e}")),
+        }
+    }
+    report
+}
+
 /// Doctor diagnostics for one agent (single slug) or all four (`"all"`).
 pub fn doctor(slug: &str, env: &Env, current_mine_version: &str) -> MineResult<DoctorReport> {
     let state_result = agent_setup::managed_state::ManagedState::load(&env.config_root);

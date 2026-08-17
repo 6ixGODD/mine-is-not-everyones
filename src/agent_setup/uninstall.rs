@@ -66,6 +66,19 @@ pub fn uninstall(agent: Agent, env: &Env, dry_run: bool) -> MineResult<Uninstall
             drifted_files.push(f.path.clone());
             continue;
         }
+        // Shared-destination protection: when another Agent's managed record
+        // also owns this exact file (e.g. Pi and Codex both recording the
+        // shared ~/.agents/skills set), do not delete it - only remove it
+        // from this Agent's record. Otherwise uninstalling one Agent would
+        // break the other's installation.
+        let also_owned_elsewhere = state
+            .records()
+            .iter()
+            .filter(|r| r.agent != agent.slug())
+            .any(|r| r.files.iter().any(|of| of.path == f.path));
+        if also_owned_elsewhere {
+            continue;
+        }
         if !dry_run {
             std::fs::remove_file(&abs).map_err(MineError::Io)?;
         }
