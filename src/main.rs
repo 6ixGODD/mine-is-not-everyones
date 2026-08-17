@@ -46,7 +46,13 @@ fn main() -> std::process::ExitCode {
         );
         let payload = serde_json::to_string(&report).unwrap_or_else(|_| "{}".to_string());
         let line = if json {
-            format!("{{\"command\":\"__refresh-skills\",\"data\":{payload},\"ok\":true}}\n")
+            // Emit the BARE RefreshReport (not an envelope): the parent
+            // `mine update` process may be an OLDER binary whose parser
+            // expects the report object directly. An envelope with a `data`
+            // wrapper would make that older parent report a bogus
+            // "refresh report unparseable" error even though the refresh
+            // succeeded. Newer parents accept both forms.
+            format!("{payload}\n")
         } else {
             let mut s = format!("skills refreshed for {}\n", env!("CARGO_PKG_VERSION"));
             if report.refreshed.is_empty() && report.errors.is_empty() {
