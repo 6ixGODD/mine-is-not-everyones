@@ -40,10 +40,4 @@ jobs:
         run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: cargo test
-        run: >-
-          cargo test --all-targets --all-features --
-          --skip user_guide_lists_supported_clients_only_and_no_imaginary_commands
-          --skip user_guide_names_design_root_and_backup_behavior
-          --skip user_guide_uses_agent_status_for_machine_level_lifecycle
-          --skip docs_readme_anchor_points_to_installation_and_lifecycle
-          --skip en_zh_readmes_share_lifecycle_semantics
+        run: cargo test --all-targets --all-features
