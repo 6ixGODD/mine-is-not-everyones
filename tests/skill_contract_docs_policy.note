@@ -1,0 +1,5 @@
+User-facing README and User Guide prose is intentionally not a golden-text contract.
+
+`tests/skill_contract.rs` should validate installed Skill behavior and real command/tool surfaces. It must not freeze user documentation headings, anchors, wording, or require specific explanatory strings merely to keep CI green.
+
+Documentation correctness should be checked through rendered-link/anchor validation and against real CLI behavior where useful, not `contains(...)` assertions over prose.
