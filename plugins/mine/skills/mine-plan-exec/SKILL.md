@@ -1,12 +1,12 @@
 ---
 name: mine-plan-exec
-description: Execute one repository implementation plan end to end in the current working tree. Use when the user invokes the host-specific mine-plan-exec skill with a plan file, asks to implement a plan created by mine-plan-create, or wants a governed plan execution with dependency checks, code changes, verification, acceptance reporting, commits, and execution-graph updates. Execute in the workspace supplied by the user or scheduler. Never create or switch branches/worktrees yourself unless explicitly authorized.
-version: 0.1.8
+description: Execute one repository implementation plan end to end on the MINE-managed plan/<id>-<slug> branch. Use when the user invokes the host-specific mine-plan-exec skill with a plan file, asks to implement a plan created by mine-plan-create, or wants a governed plan execution with dependency checks, code changes, verification, acceptance reporting, commits, and execution-graph updates. Enter or create the plan branch from accepted dev per the standing Git authorization (AGENTS.md, branch-and-plan-lifecycle.md); never implement directly on stable or dev. Respect scheduler-supplied worktrees as authoritative.
+version: 0.1.9
 ---
 
 # MINE Plan Execute
 
-MINE Is Not Everyone's. Treat the supplied plan as an immutable execution contract. Implement it in the current working tree, verify it, report it, and leave the
+MINE Is Not Everyone's. Treat the supplied plan as an immutable execution contract. Implement it on the MINE-managed `plan/<id>-<slug>` branch, verify it, report it, and leave the
 current branch ready for review. Do not merely describe the work.
 
 ## Integration: MCP tools and CLI fallback
@@ -95,15 +95,30 @@ Read the execution graph rather than inferring readiness from filenames.
 Do not edit, rename, renumber, delete, or append to the requested plan or any earlier immutable plan. If implementation proves the plan or
 architecture wrong, stop and request a compensating design/plan instead of improvising.
 
-## Work in the assigned workspace
+## Work in the assigned plan branch
 
-Execute on the branch and working tree supplied by the user or parallel scheduler. A scheduler may start this skill inside an already-created isolated worktree; treat that workspace as authoritative.
+Plan implementation runs on the MINE-managed `plan/<id>-<slug>` branch,
+created from the accepted `dev` baseline - never directly on the stable
+branch or on `dev`. The repository owner's Skill invocation grants the
+standing Git authorization (root `AGENTS.md`, `docs/design/governance/
+branch-and-plan-lifecycle.md`) to create and switch the managed `dev` and
+`plan/*` branches.
 
-- Do not create another Git worktree.
-- Do not create or switch branches.
-- Do not stash, reset, clean, restore, checkout, or discard existing changes.
+- If the current branch/worktree is already the correct `plan/<id>-<slug>`
+  branch, work there.
+- If a scheduler or the user supplied an isolated worktree checked out at the
+  plan branch, treat it as authoritative: do not create a second worktree.
+- If the current checkout is `dev` (or the stable branch) and no plan branch
+  exists for this Plan, create `plan/<id>-<slug>` from the current accepted
+  `dev` HEAD and switch to it before editing. If a plan branch already exists
+  for this Plan (e.g. after a timeout), switch to it and continue the
+  existing diff rather than starting a second implementation.
+- Never implement on stable or `dev` directly.
+- Never stash, reset, clean, restore, or checkout to discard existing
+  changes; never force-push or rewrite shared history.
 - Do not tell the user to merge a hidden implementation branch afterward.
-- Do not delegate plan execution unless the user explicitly requests delegation.
+- Do not delegate plan execution unless the user explicitly requests
+  delegation.
 
 Before editing, inspect `git status --short`, the current branch, and staged changes. Classify existing changes as:
 
